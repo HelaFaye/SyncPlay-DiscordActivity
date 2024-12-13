@@ -1,3 +1,7 @@
+THIS IS ACTIVELY IN DEVELOPMENT AND NOT FOR USE BY THE AVERAGE USER YET
+I WILL UPDATE THIS README WHEN THE REPO IS IN A WORKING STATE
+
+
 [![Website](https://img.shields.io/website?down_color=red&down_message=offline&label=Website&up_color=green&up_message=online&url=https%3A%2F%2Fweb-syncplay.de)](https://demo.web-syncplay.de)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/35f7884623744a5c8ad64e184f6f5dcf)](https://www.codacy.com/gh/Web-SyncPlay/Web-SyncPlay/dashboard?utm_source=github.com&utm_medium=referral&utm_content=Web-SyncPlay/Web-SyncPlay&utm_campaign=Badge_Grade)
 [![CodeFactor](https://www.codefactor.io/repository/github/web-syncplay/web-syncplay/badge)](https://www.codefactor.io/repository/github/web-syncplay/web-syncplay)
