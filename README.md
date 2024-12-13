@@ -1,11 +1,6 @@
 THIS IS ACTIVELY IN DEVELOPMENT AND NOT FOR USE BY THE AVERAGE USER YET
+
 I WILL UPDATE THIS README WHEN THE REPO IS IN A WORKING STATE
-
-
-[![Website](https://img.shields.io/website?down_color=red&down_message=offline&label=Website&up_color=green&up_message=online&url=https%3A%2F%2Fweb-syncplay.de)](https://demo.web-syncplay.de)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/35f7884623744a5c8ad64e184f6f5dcf)](https://www.codacy.com/gh/Web-SyncPlay/Web-SyncPlay/dashboard?utm_source=github.com&utm_medium=referral&utm_content=Web-SyncPlay/Web-SyncPlay&utm_campaign=Badge_Grade)
-[![CodeFactor](https://www.codefactor.io/repository/github/web-syncplay/web-syncplay/badge)](https://www.codefactor.io/repository/github/web-syncplay/web-syncplay)
-[![Docker Image Size (tag)](https://img.shields.io/docker/image-size/websyncplay/websyncplay/latest?logo=docker)](https://hub.docker.com/r/websyncplay/websyncplay)
 
 # Web-SyncPlay
 
@@ -53,8 +48,11 @@ sure that everyone stays synchronised and there is no feedback loop of commands.
 
 ## Getting started
 
-To run this software on your own hardware, you will need to have [Docker](https://www.docker.com/) or any other
-container engine installed.
+THIS IS NOT READY YET
+
+DOCKER WILL BE REMOVED AS A REQUIREMENT AS IT IS NOT NECESSARY
+
+MY GOAL IS TO ONLY IMPLEMENT THE CLIENT TO TALK TO ANY COMPATIBLE STREAMING SERVICE/CUSTOM SERVER
 
 ### docker-compose
 
