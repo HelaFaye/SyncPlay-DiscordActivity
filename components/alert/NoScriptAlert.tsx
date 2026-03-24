@@ -1,4 +1,4 @@
-import React, { FC } from "react"
+import { FC } from "react"
 import Alert, { AlertProps } from "./Alert"
 
 const NoScriptAlert: FC<AlertProps> = ({ className = "", canClose = true }) => {

@@ -33,6 +33,10 @@ const UserList: FC<Props> = ({ socket }) => {
     socket.emit("fetch")
   }, [socket])
 
+  if (typeof socket.id !== "string") {
+    return null
+  }
+
   return (
     <div
       className={
@@ -42,7 +46,7 @@ const UserList: FC<Props> = ({ socket }) => {
       {users.map((user) => (
         <UserItem
           user={user}
-          socketId={socket.id}
+          socketId={socket.id ?? ""}
           ownerId={owner}
           key={user.uid}
           updateName={(name) => {

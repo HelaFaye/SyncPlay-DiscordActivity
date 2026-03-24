@@ -3,7 +3,7 @@ import Image from "next/image"
 import { getSiteDomain, getSiteName } from "../lib/env"
 import Button from "./action/Button"
 import IconShare from "./icon/IconShare"
-import React, { useState } from "react"
+import { useState } from "react"
 import Modal from "./modal/Modal"
 import InputClipboardCopy from "./input/InputClipboardCopy"
 import { Tooltip } from "react-tooltip"
@@ -58,9 +58,7 @@ const Navbar = ({ roomId }: { roomId?: string }) => {
       <Tooltip
         anchorId={"navbar"}
         place={"bottom"}
-        style={{
-          backgroundColor: "var(--dark-700)",
-        }}
+        style={{ backgroundColor: "var(--dark-700)" }}
       />
     </div>
   )

@@ -1,4 +1,4 @@
-import React, { FC, useState } from "react"
+import { FC, useState } from "react"
 import { MediaOption, PlayerState, Subtitle } from "../../lib/types"
 import InteractionHandler from "../action/InteractionHandler"
 import IconBigPause from "../icon/IconBigPause"
@@ -288,11 +288,7 @@ const Controls: FC<Props> = ({
         </div>
       </InteractionHandler>
 
-      <Tooltip
-        style={{
-          backgroundColor: "var(--dark-700)",
-        }}
-      />
+      <Tooltip style={{ backgroundColor: "var(--dark-700)" }} />
     </>
   )
 }

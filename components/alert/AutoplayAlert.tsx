@@ -1,4 +1,4 @@
-import React, { FC } from "react"
+import { FC } from "react"
 import Alert from "./Alert"
 import Button from "../action/Button"
 import IconSoundMute from "../icon/IconSoundMute"
