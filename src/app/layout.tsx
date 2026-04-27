@@ -6,8 +6,8 @@ import "./globals.css"
 import { AppProviders } from "./providers"
 
 export const metadata: Metadata = {
-  title: "Web-SyncPlay vNext",
-  description: "Realtime synchronized playback rooms",
+  title: "Web-SyncPlay",
+  description: "Watch videos or play music in sync with your friends",
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {

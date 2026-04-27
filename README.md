@@ -1,6 +1,6 @@
-# Web-SyncPlay vNext
+# Web-SyncPlay
 
-Web-SyncPlay vNext is now a unified Bun + Next.js codebase with all application code in `src/`. Realtime websocket handling is embedded in the same runtime, and shared room playback state is persisted in Valkey with a 1h TTL.
+Web-SyncPlay is now a unified Bun + Next.js codebase with all application code in `src/`. Realtime websocket handling is embedded in the same runtime, and shared room playback state is persisted in Valkey with a 1h TTL.
 
 ## Stack
 

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "web-syncplay-vnext",
+      "name": "web-syncplay",
       "dependencies": {
         "@base-ui/react": "^1.4.1",
         "@dnd-kit/react": "^0.4.0",
