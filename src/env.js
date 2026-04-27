@@ -21,13 +21,6 @@ export const env = createEnv({
       .default(100),
     ROOM_HISTORY_LIMIT: z.coerce.number().int().min(1).max(200).default(200),
     ROOM_ACTION_LOG_LIMIT: z.coerce.number().int().min(1).max(500).default(500),
-    CONTROL_TOKEN_SECRET: z.string().min(16),
-    CONTROL_TOKEN_TTL_SECONDS: z.coerce
-      .number()
-      .int()
-      .min(30)
-      .max(3600)
-      .default(600),
   },
 
   /**
@@ -52,8 +45,6 @@ export const env = createEnv({
     ROOM_PARTICIPANTS_LIMIT: process.env.ROOM_PARTICIPANTS_LIMIT,
     ROOM_HISTORY_LIMIT: process.env.ROOM_HISTORY_LIMIT,
     ROOM_ACTION_LOG_LIMIT: process.env.ROOM_ACTION_LOG_LIMIT,
-    CONTROL_TOKEN_SECRET: process.env.CONTROL_TOKEN_SECRET,
-    CONTROL_TOKEN_TTL_SECONDS: process.env.CONTROL_TOKEN_TTL_SECONDS,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
