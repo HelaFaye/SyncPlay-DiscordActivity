@@ -1,3 +1,4 @@
+import { env } from "@/env"
 import {
   installShutdownOnce,
   registerShutdownHandler,
@@ -30,11 +31,6 @@ function getTransportSlot() {
   }
   return g.__webSyncPlayWsTransport
 }
-
-const heartbeatIntervalMs = Number(
-  process.env.WS_HEARTBEAT_INTERVAL_MS ?? 15_000,
-)
-const heartbeatTimeoutMs = Number(process.env.WS_HEARTBEAT_TIMEOUT_MS ?? 45_000)
 
 let shutdownRegistered = false
 
@@ -117,13 +113,13 @@ export function attachWebSocketTransport(
     for (const ws of wss.clients) {
       if (ws.readyState !== ws.OPEN) continue
       const lastSeen = slot.lastPongAt.get(ws) ?? Date.now()
-      if (Date.now() - lastSeen > heartbeatTimeoutMs) {
+      if (Date.now() - lastSeen > env.WS_HEARTBEAT_TIMEOUT_MS) {
         ws.terminate()
         continue
       }
       ws.ping()
     }
-  }, heartbeatIntervalMs)
+  }, env.WS_HEARTBEAT_INTERVAL_MS)
 
   wss.on("close", () => {
     if (slot.heartbeat) {

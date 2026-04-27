@@ -19,8 +19,25 @@ export const env = createEnv({
       .min(1)
       .max(100)
       .default(100),
-    ROOM_HISTORY_LIMIT: z.coerce.number().int().min(1).max(200).default(200),
-    ROOM_ACTION_LOG_LIMIT: z.coerce.number().int().min(1).max(500).default(500),
+    ROOM_HISTORY_LIMIT: z.coerce.number().int().min(1).max(200).default(100),
+    ROOM_ACTION_LOG_LIMIT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(500),
+    WS_HEARTBEAT_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(30000)
+      .default(5000),
+    WS_HEARTBEAT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(60000)
+      .default(15000),
   },
 
   /**
@@ -45,12 +62,14 @@ export const env = createEnv({
     ROOM_PARTICIPANTS_LIMIT: process.env.ROOM_PARTICIPANTS_LIMIT,
     ROOM_HISTORY_LIMIT: process.env.ROOM_HISTORY_LIMIT,
     ROOM_ACTION_LOG_LIMIT: process.env.ROOM_ACTION_LOG_LIMIT,
+    WS_HEARTBEAT_INTERVAL_MS: process.env.WS_HEARTBEAT_INTERVAL_MS,
+    WS_HEARTBEAT_TIMEOUT_MS: process.env.WS_HEARTBEAT_TIMEOUT_MS,
   },
+
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
    * useful for Docker builds.
    */
-
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   /**
    * Makes it so that empty strings are treated as undefined. `SOME_VAR: z.string()` and
