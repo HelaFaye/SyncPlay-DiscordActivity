@@ -1,19 +1,22 @@
-version: "3.3"
 services:
   web:
-    image: websyncplay/websyncplay
+    build: .
+    restart: unless-stopped
+    environment:
+      VALKEY_URL: redis://valkey:6379
+      YTDLP_BIN: yt-dlp
+    ports:
+      - "3000:3000"
+    depends_on:
+      - valkey
+
+  valkey:
+    image: valkey/valkey:8.1
     restart: unless-stopped
     ports:
-      - "8081:8081"
-    environment:
-      SITE_NAME: ${SITE_NAME}
-      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN}
-
-      # provide your own url to your own redis setup
-      REDIS_URL: ${REDIS_URL}
-    depends_on:
-      - redis
-
-  redis:
-    image: redis
-    restart: unless-stopped
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "valkey-cli ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
