@@ -35,3 +35,10 @@ pnpm-debug.log*
 !.env.example
 .DS_Store
 Thumbs.db
+
+# Other
+Dockerfile*
+docker-compose*
+.dockerignore
+.prettierignore
+components.json
