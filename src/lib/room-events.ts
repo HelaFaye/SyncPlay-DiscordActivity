@@ -19,6 +19,16 @@ export interface ClientEventPayloadMap {
   "playback:loop:video": { mode: LoopMode }
   "playback:loop:playlist": { mode: LoopMode }
   "playlist:add:url": { url: string }
+  "playlist:add:local": {
+    localMediaId: string
+    name: string
+    mimeType?: string
+    sizeBytes?: number
+  }
+  "playlist:retry": { itemId: string }
+  "playlist:item:error": { itemId: string; error: string }
+  "playlist:stream:select": { itemId: string; streamId: string }
+  "playlist:text-track:select": { itemId: string; textTrackId: string | null }
   "playlist:rename": { itemId: string; name: string }
   "playlist:reorder": { from: number; to: number }
   "playlist:select": { index: number }

@@ -17,8 +17,11 @@ export async function createInitialRoomState(
     playlist: defaults.map((entry) => ({
       id: randomUUID(),
       name: entry.title,
+      sourceKind: "remote_url",
+      playbackMode: "direct",
       sourceUrl: entry.url,
       playableUrl: entry.url,
+      ingestStatus: "ready",
       originalUrl: entry.url,
       createdBy: ownerId,
       createdAt: Date.now(),

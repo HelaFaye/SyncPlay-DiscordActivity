@@ -16,6 +16,7 @@ import {
   GripVertical,
   Loader2,
   PlayCircle,
+  RefreshCw,
 } from "lucide-react"
 
 export function PlaylistItemRow(props: {
@@ -30,9 +31,9 @@ export function PlaylistItemRow(props: {
   onDraftStart: () => void
   onDraftCommit: () => void
   onDraftCancel: () => void
-  onPlay: () => void
   onMoveUp: () => void
   onMoveDown: () => void
+  onRetry: () => void
 }) {
   const {
     item,
@@ -46,9 +47,9 @@ export function PlaylistItemRow(props: {
     onDraftStart,
     onDraftCommit,
     onDraftCancel,
-    onPlay,
     onMoveUp,
     onMoveDown,
+    onRetry,
   } = props
 
   const { ref, handleRef, isDragging, isDropTarget } = useSortable({
@@ -66,7 +67,10 @@ export function PlaylistItemRow(props: {
         isDropTarget && "ring-2 ring-ring/40 rounded-lg",
       )}
     >
-      <Item variant={isCurrent ? "outline" : "muted"}>
+      <Item
+        variant={isCurrent ? "outline" : "muted"}
+        className={cn(item.ingestStatus === "error" && "border-destructive/60")}
+      >
         {canControlPlaylist && (
           <ItemMedia>
             <Button
@@ -107,7 +111,7 @@ export function PlaylistItemRow(props: {
             )}
           >
             {isCurrent && <PlayCircle className="size-4 text-emerald-500" />}
-            {item.isResolving && (
+            {(item.isResolving || item.ingestStatus === "resolving") && (
               <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
             )}
             {index + 1}. {item.name}
@@ -117,14 +121,27 @@ export function PlaylistItemRow(props: {
               </span>
             )}
           </ItemTitle>
-          {item.isResolving || item.resolutionError ? (
+          {item.isResolving || item.resolutionError || item.ingestError ? (
             <p className="text-xs text-muted-foreground">
               {item.sourceUrl}
-              {item.resolutionError ? ` (${item.resolutionError})` : ""}
+              {(item.resolutionError || item.ingestError) &&
+                ` (${item.ingestError ?? item.resolutionError})`}
             </p>
           ) : null}
         </ItemContent>
         <ItemActions>
+          <Button
+            variant="secondary"
+            size="icon-sm"
+            disabled={
+              !canControlPlaylist ||
+              item.ingestStatus !== "error" ||
+              item.blockedReason === "local_owner_offline"
+            }
+            onClick={onRetry}
+          >
+            <RefreshCw className="size-3.5" />
+          </Button>
           <Button
             variant="secondary"
             size="icon-sm"

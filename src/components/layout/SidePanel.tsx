@@ -3,9 +3,9 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader } from "@/components/ui/card"
 import { useState } from "react"
-import { LogPanel } from "./log/LogPanel"
-import { PlaylistPanel } from "./playlist/PlaylistPanel"
-import type { RoomPanelProps } from "./types"
+import { LogPanel } from "../panel/log/LogPanel"
+import { PlaylistPanel } from "../panel/playlist/PlaylistPanel"
+import type { RoomPanelProps } from "./page/types"
 
 export function SidePanel({ panelProps }: { panelProps: RoomPanelProps }) {
   const [panel, setPanel] = useState<"playlist" | "log">("playlist")

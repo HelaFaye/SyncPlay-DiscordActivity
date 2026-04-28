@@ -5,12 +5,10 @@ import { Spinner } from "@/components/ui/spinner"
 import { useRoomSession } from "@/hooks/use-room-session"
 import { getRoomUrl } from "@/lib/control-url"
 import { canControlPlayback } from "@/lib/permissions-utils"
-import { PlayerPanel } from "./player/PlayerPanel"
-import { RoomNavbar } from "./RoomNavbar"
-import { SidePanel } from "./SidePanel"
-import { UsersPanel } from "./user/UsersPanel"
+import { PlayerPanel } from "../../panel/player/PlayerPanel"
+import { SiteNavbar } from "../SiteNavbar"
 
-export function RoomClient({ roomId }: { roomId: string }) {
+export function PlayerEmbedClient({ roomId }: { roomId: string }) {
   const {
     roomState,
     sessionCapabilities,
@@ -28,7 +26,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     return (
       <Alert className="max-w-md">
         <Spinner className="mt-0.5" />
-        <AlertTitle>Connecting to room</AlertTitle>
+        <AlertTitle>Connecting to player embed</AlertTitle>
         <AlertDescription>Socket status: {status}</AlertDescription>
       </Alert>
     )
@@ -40,39 +38,35 @@ export function RoomClient({ roomId }: { roomId: string }) {
     canControlByRole &&
     (!sessionCapabilities.isControlSession ||
       sessionCapabilities.controlAuthorized)
-  const panelProps = {
-    roomId,
-    roomState,
-    send,
-    userId,
-    capabilities: {
-      ...sessionCapabilities,
-      canControlPlayback: canMutateFromThisSession,
-      canManagePlaylist: canMutateFromThisSession,
-    },
-  }
   const current = roomState.playlist[roomState.currentIndex]
-  const showViewMenu = canControlByRole
 
   return (
     <>
-      <RoomNavbar
+      <SiteNavbar
         roomId={roomId}
         paused={roomState.playback.paused}
         currentName={current?.name}
-        viewMode="room"
+        viewMode="player"
         roomUrl={getRoomUrl(roomId)}
         playerEmbedUrl={playerEmbedUrl}
         controlEmbedUrl={controlEmbedUrl}
         shareUrl={shareUrl}
         copied={copied}
         onCopyShareUrl={handleCopyShareUrl}
-        showViewMenu={showViewMenu}
+        showViewMenu={canControlByRole}
       />
-      <section className="grid px-2 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        <PlayerPanel {...panelProps} />
-        <SidePanel panelProps={panelProps} />
-        <UsersPanel {...panelProps} />
+      <section className="grid px-2">
+        <PlayerPanel
+          roomState={roomState}
+          roomId={roomId}
+          userId={userId}
+          send={send}
+          capabilities={{
+            ...sessionCapabilities,
+            canControlPlayback: canMutateFromThisSession,
+            canManagePlaylist: canMutateFromThisSession,
+          }}
+        />
       </section>
     </>
   )

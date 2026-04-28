@@ -1,4 +1,5 @@
 import { appendActionLog } from "@/server/log"
+import { deleteLocalMediaEntriesForOwner } from "@/server/media/local-media-store"
 import {
   applyOfflinePruning,
   clearAllRoomPrunes,
@@ -20,6 +21,10 @@ import type { WebSocket } from "ws"
 import { roomMessageHandlers } from "./handlers/index"
 import { handleRoomJoin } from "./handlers/join"
 import { transferOwnershipIfNeeded } from "./services/ownership"
+
+function nextMonotonicMs(previous: number, next: number) {
+  return Math.max(previous + 1, next)
+}
 
 function broadcastRoomStateLocal(roomId: string, state: unknown) {
   const event: WsEnvelope<string, unknown> = {
@@ -80,14 +85,46 @@ function setupWebSocketConnection(
       const stillActive = activeUsers.has(meta.userId)
       if (!stillActive) {
         let didMutate = false
+        const now = Date.now()
         const participant = state.participants[meta.userId]
         if (participant) {
           participant.connected = false
-          participant.disconnectedAt = Date.now()
-          participant.lastSeenAt = Date.now()
-          participant.localPlayback.updatedAt = Date.now()
+          participant.disconnectedAt = now
+          participant.lastSeenAt = now
+          participant.localPlayback.updatedAt = now
           didMutate = true
         }
+
+        let invalidatedCurrent = false
+        for (const item of state.playlist) {
+          if (item.sourceKind !== "local_file") continue
+          if (!item.localOriginUserId || item.localOriginUserId !== meta.userId)
+            continue
+          if (item.blockedReason === "local_owner_offline") continue
+
+          item.ingestStatus = "error"
+          item.ingestError =
+            "Local file owner went offline. Re-add the file to resume."
+          item.resolutionError = item.ingestError
+          item.blockedReason = "local_owner_offline"
+          didMutate = true
+
+          if (state.playlist[state.currentIndex]?.id === item.id) {
+            invalidatedCurrent = true
+          }
+        }
+
+        if (invalidatedCurrent && !state.playback.paused) {
+          state.playback.paused = true
+          state.playback.serverNowMs = nextMonotonicMs(
+            state.playback.serverNowMs,
+            now,
+          )
+          didMutate = true
+        }
+
+        await deleteLocalMediaEntriesForOwner(meta.roomId, meta.userId)
+
         applyOfflinePruning(state)
         if (transferOwnershipIfNeeded(state, "disconnect")) {
           didMutate = true
@@ -102,7 +139,7 @@ function setupWebSocketConnection(
           })
         }
         if (didMutate) {
-          state.updatedAt = Date.now()
+          state.updatedAt = now
         }
         schedulePrune(meta.roomId, meta.userId, store)
         return state

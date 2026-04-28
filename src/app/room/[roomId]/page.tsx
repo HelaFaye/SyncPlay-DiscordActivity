@@ -1,4 +1,4 @@
-import { RoomClient } from "@/components/panel/RoomClient"
+import { RoomClient } from "@/components/layout/page/RoomClient"
 
 export default async function RoomPage({
   params,

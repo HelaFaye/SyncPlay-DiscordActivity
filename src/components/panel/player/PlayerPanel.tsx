@@ -1,12 +1,21 @@
 "use client"
 
 import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import {
+  computeExpectedPlaybackTimeSec,
   getAdjacentPlaylistIndex,
   inferMediaViewType,
 } from "@/lib/playback-sync"
 import {
   MediaPlayer,
   MediaProvider,
+  Track,
   type MediaErrorDetail,
   type MediaPlayerInstance,
 } from "@vidstack/react"
@@ -20,7 +29,10 @@ import "@vidstack/react/player/styles/default/layouts/video.css"
 import "@vidstack/react/player/styles/default/theme.css"
 import { SkipBack, SkipForward } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { RoomPanelProps } from "../types"
+import { toast } from "sonner"
+import type { RoomPanelProps } from "../../layout/page/types"
+import { ControlPanel } from "../control/ControlPanel"
+import { PlaylistAddMediaControls } from "../playlist/PlaylistAddMediaControls"
 import { RemoteSeekOverlay } from "./RemoteSeekOverlay"
 import { usePlayerPermissions } from "./hooks/use-player-permissions"
 import { usePlayerSync } from "./hooks/use-player-sync"
@@ -64,12 +76,14 @@ export function PlayerPanel({
   capabilities,
 }: RoomPanelProps) {
   const current = roomState.playlist[roomState.currentIndex]
-  const viewType = inferMediaViewType(current?.playableUrl)
 
   const playerRef = useRef<MediaPlayerInstance>(null)
+  const autoPlayAfterLoadRef = useRef(false)
   const suppressOutgoingRef = useRef(false)
   const playbackRef = useRef(roomState.playback)
   const isMediaReadyRef = useRef(false)
+  const bufferingSinceRef = useRef<number | null>(null)
+  const participantStatusErrorRef = useRef<string | null>(null)
   const localSeekIntentRef = useRef<{ targetMs: number; at: number } | null>(
     null,
   )
@@ -81,22 +95,53 @@ export function PlayerPanel({
     videoLoop: boolean
   } | null>(null)
 
-  const { preferredVolume, handleVolumeChange, isMuted } = usePlayerVolume()
-  const { applySyncToPlayer } = usePlayerSync()
+  const reportedItemErrorRef = useRef<string | null>(null)
   const [isBuffering, setIsBuffering] = useState(false)
   const [mediaDurationMs, setMediaDurationMs] = useState(0)
   const [playbackError, setPlaybackError] = useState<
     MediaErrorDetail | undefined
   >(undefined)
+  const [playerRemountNonce, setPlayerRemountNonce] = useState(0)
+
   const playbackErrorLabel = useMemo(
     () => (playbackError ? formatMediaErrorDetail(playbackError) : undefined),
     [playbackError],
   )
+
+  const { applySyncToPlayer } = usePlayerSync()
+  const { preferredVolume, handleVolumeChange, isMuted } = usePlayerVolume()
   const { canControlPlayback: canControlByRole } = usePlayerPermissions(
     roomState,
     userId,
   )
+  const {
+    isOtherUserSeeking,
+    remoteSeekerName,
+    remoteSeekTargetMs,
+    seekProgressPercent,
+    totalTimeLabel,
+  } = useRemoteSeekOverlay({ mediaDurationMs, roomState, userId })
+
+  const activeStream = useMemo(() => {
+    if (!current) {
+      return null
+    }
+    const streams = current.mediaStreams ?? []
+    if (streams.length === 0) {
+      return null
+    }
+    return (
+      streams.find((stream) => stream.id === current.selectedStreamId) ??
+      streams.find((stream) => stream.isDefault) ??
+      streams[0] ??
+      null
+    )
+  }, [current])
+  const activePlaybackSrc = activeStream?.src ?? current?.playableUrl ?? ""
+  const viewType = inferMediaViewType(activePlaybackSrc)
+
   const canControlPlayback = canControlByRole && capabilities.canControlPlayback
+  const controlsDisabled = !canControlPlayback || isOtherUserSeeking
   const totalItems = roomState.playlist.length
   const hasPlaylistItems = totalItems > 0
   const canWrapPlaylist = roomState.playback.playlistLoop !== "off"
@@ -105,9 +150,39 @@ export function PlayerPanel({
   const hasNextItem =
     hasPlaylistItems &&
     (roomState.currentIndex < totalItems - 1 || canWrapPlaylist)
+
+  useEffect(() => {
+    if (!current) return
+    if (current.sourceKind !== "local_file" || !current.localOriginUserId)
+      return
+    const ownerConnected =
+      roomState.participants[current.localOriginUserId]?.connected ?? false
+    if (ownerConnected) return
+
+    const player = playerRef.current
+    try {
+      player?.pause()
+    } catch {
+      // Ignore pause failures during remount/provider swaps.
+    }
+
+    if (reportedItemErrorRef.current === current.id) return
+    reportedItemErrorRef.current = current.id
+    toast.error("Local media owner is offline")
+  }, [current, roomState.participants])
+
   useEffect(() => {
     playbackRef.current = roomState.playback
   }, [roomState.playback])
+
+  useEffect(() => {
+    autoPlayAfterLoadRef.current = false
+    isMediaReadyRef.current = false
+    pendingSyncRef.current = null
+    localSeekIntentRef.current = null
+    bufferingSinceRef.current = Date.now()
+    participantStatusErrorRef.current = null
+  }, [current?.id, activePlaybackSrc])
 
   useEffect(() => {
     if (canControlPlayback) {
@@ -175,6 +250,13 @@ export function PlayerPanel({
       pendingSyncRef.current = null
     } catch {
       pendingSyncRef.current = syncState
+      console.warn("[player] applySyncToPlayer failed (effect)", {
+        itemId: current?.id,
+        itemName: current?.name,
+        src: activePlaybackSrc,
+        viewType,
+        syncState,
+      })
     }
 
     const release = window.setTimeout(() => {
@@ -182,12 +264,16 @@ export function PlayerPanel({
     }, 80)
     return () => window.clearTimeout(release)
   }, [
+    activePlaybackSrc,
     applySyncToPlayer,
+    current?.id,
+    current?.name,
     roomState.playback.paused,
     roomState.playback.playbackRate,
     roomState.playback.serverNowMs,
     roomState.playback.timelineAnchorMs,
     roomState.playback.videoLoop,
+    viewType,
   ])
 
   useEffect(() => {
@@ -208,7 +294,8 @@ export function PlayerPanel({
           Math.floor(Number(player.currentTime ?? 0) * 1000),
         ),
         loading: isBuffering,
-        error: playbackErrorLabel,
+        error:
+          playbackErrorLabel ?? participantStatusErrorRef.current ?? undefined,
       })
     }, 250)
     return () => window.clearInterval(timer)
@@ -228,27 +315,114 @@ export function PlayerPanel({
     if (!player) {
       return
     }
+    if (!isMediaReadyRef.current) {
+      return
+    }
 
     const syncState = playbackRef.current
     suppressOutgoingRef.current = true
 
     try {
       applySyncToPlayer({ player, syncState })
+    } catch {
+      // Ignore transient sync errors while provider is rebuilding.
+      console.warn("[player] applySyncToPlayer failed (enforce)", {
+        itemId: current?.id,
+        itemName: current?.name,
+        src: activePlaybackSrc,
+        viewType,
+        syncState,
+      })
     } finally {
       window.setTimeout(() => {
         suppressOutgoingRef.current = false
       }, 80)
     }
-  }, [applySyncToPlayer])
+  }, [
+    activePlaybackSrc,
+    applySyncToPlayer,
+    current?.id,
+    current?.name,
+    viewType,
+  ])
+
+  useEffect(() => {
+    if (!current) {
+      return
+    }
+    if (!isBuffering) {
+      return
+    }
+
+    const startedAt = bufferingSinceRef.current
+    if (!startedAt) {
+      return
+    }
+
+    const watchdogMs = 12_000
+    const now = Date.now()
+    const remainingMs = watchdogMs - (now - startedAt)
+    if (remainingMs <= 0) {
+      return
+    }
+
+    const timer = window.setTimeout(
+      () => {
+        if (!isBuffering) return
+        if (bufferingSinceRef.current !== startedAt) return
+
+        participantStatusErrorRef.current = "Playback stalled: recovering…"
+        console.error("[player] buffering watchdog triggered", {
+          itemId: current.id,
+          itemName: current.name,
+          src: activePlaybackSrc,
+          viewType,
+          isMediaReady: isMediaReadyRef.current,
+          pendingSync: pendingSyncRef.current,
+          roomPaused: roomState.playback.paused,
+          roomRate: roomState.playback.playbackRate,
+          roomAnchorMs: roomState.playback.timelineAnchorMs,
+          roomServerNowMs: roomState.playback.serverNowMs,
+        })
+
+        // Keep a sync state ready to apply after recovery/remount.
+        pendingSyncRef.current = {
+          paused: roomState.playback.paused,
+          playbackRate: roomState.playback.playbackRate,
+          timelineAnchorMs: roomState.playback.timelineAnchorMs,
+          serverNowMs: roomState.playback.serverNowMs,
+          videoLoop: roomState.playback.videoLoop !== "off",
+        }
+
+        isMediaReadyRef.current = false
+        suppressOutgoingRef.current = true
+        setIsBuffering(true)
+        setPlayerRemountNonce((n) => n + 1)
+        window.setTimeout(() => {
+          suppressOutgoingRef.current = false
+        }, 200)
+      },
+      Math.max(250, remainingMs),
+    )
+
+    return () => window.clearTimeout(timer)
+  }, [
+    activePlaybackSrc,
+    current,
+    isBuffering,
+    roomState.playback.paused,
+    roomState.playback.playbackRate,
+    roomState.playback.serverNowMs,
+    roomState.playback.timelineAnchorMs,
+    roomState.playback.videoLoop,
+    viewType,
+  ])
 
   const selectPlaylistIndex = useCallback(
     (targetIndex: number) => {
+      const wasPlaying = !playbackRef.current.paused
       send("playlist:select", { index: targetIndex })
-      if (!playbackRef.current.paused) {
-        window.setTimeout(() => {
-          send("playback:toggle", { currentTimeMs: 0 })
-        }, 120)
-      }
+      autoPlayAfterLoadRef.current = wasPlaying
       if (
         roomState.playback.playlistLoop === "once" &&
         targetIndex === 0 &&
@@ -346,263 +520,401 @@ export function PlayerPanel({
     }
   }, [])
 
-  const {
-    isOtherUserSeeking,
-    remoteSeekerName,
-    remoteSeekTargetMs,
-    seekProgressPercent,
-    totalTimeLabel,
-  } = useRemoteSeekOverlay({ mediaDurationMs, roomState, userId })
+  const elapsedMs = useMemo(
+    () =>
+      Math.floor(
+        computeExpectedPlaybackTimeSec(
+          roomState.playback,
+          roomState.playback.serverNowMs,
+        ) * 1000,
+      ),
+    [roomState.playback],
+  )
+
+  const totalDurationMs = Math.floor((current?.durationSeconds ?? 0) * 1000)
 
   return (
     <div className="relative aspect-video size-full bg-black sm:col-span-2 xl:col-span-3">
-      {!canControlPlayback ? (
+      {!canControlPlayback && (
         <div className="pointer-events-none absolute left-3 top-3 z-20 rounded-md bg-black/70 px-2 py-1 text-xs text-white/90">
-          Control page required: playback controls are view-only here.
+          You are a guest. Playback controls are view-only here.
         </div>
-      ) : null}
-      <MediaPlayer
-        ref={playerRef}
-        src={current?.playableUrl ?? ""}
-        title={current?.name ?? "Web-SyncPlay"}
-        viewType={viewType}
-        loop={roomState.playback.videoLoop !== "off"}
-        crossOrigin
-        playsInline
-        muted={isMuted}
-        className={`size-full ${isOtherUserSeeking ? "remote-seek-controls-hidden" : ""} ${!canControlPlayback ? "guest-controls-guard" : ""}`}
-        onKeyDownCapture={(event) => {
-          if (canControlPlayback) {
-            return
-          }
-          const key = event.key.toLowerCase()
-          const allowedGuestKeys = new Set(["m", "arrowup", "arrowdown"])
-          if (allowedGuestKeys.has(key)) {
-            return
-          }
+      )}
+      {activePlaybackSrc ? (
+        <MediaPlayer
+          key={`${current?.id ?? "no-media"}:${playerRemountNonce}`}
+          ref={playerRef}
+          src={activePlaybackSrc}
+          title={current?.name ?? "Web-SyncPlay"}
+          viewType={viewType}
+          loop={roomState.playback.videoLoop !== "off"}
+          crossOrigin
+          playsInline
+          muted={isMuted}
+          className={`size-full ${isOtherUserSeeking ? "remote-seek-controls-hidden" : ""} ${!canControlPlayback ? "guest-controls-guard" : ""}`}
+          onKeyDownCapture={(event) => {
+            if (canControlPlayback) {
+              return
+            }
+            const key = event.key.toLowerCase()
+            const allowedGuestKeys = new Set(["m", "arrowup", "arrowdown"])
+            if (allowedGuestKeys.has(key)) {
+              return
+            }
 
-          event.preventDefault()
-          event.stopPropagation()
-        }}
-        onMediaPlayRequest={(event) => {
-          if (canControlPlayback) {
-            return
-          }
-          event.preventDefault()
-          enforceServerPlaybackState()
-        }}
-        onMediaPauseRequest={(event) => {
-          if (canControlPlayback) {
-            return
-          }
-          event.preventDefault()
-          enforceServerPlaybackState()
-        }}
-        onPlay={() => {
-          setIsBuffering(false)
-          setPlaybackError(undefined)
-
-          if (suppressOutgoingRef.current) {
-            return
-          }
-          if (!canControlPlayback) {
-            enforceServerPlaybackState()
-            return
-          }
-
-          if (playbackRef.current.paused) {
-            send("playback:toggle", { currentTimeMs: getCurrentTimeMs() })
-          }
-        }}
-        onPause={() => {
-          setIsBuffering(false)
-          if (suppressOutgoingRef.current) {
-            return
-          }
-          if (!canControlPlayback) {
-            enforceServerPlaybackState()
-            return
-          }
-
-          if (!playbackRef.current.paused) {
-            send("playback:toggle", { currentTimeMs: getCurrentTimeMs() })
-          }
-        }}
-        onPlaying={() => {
-          setIsBuffering(false)
-          setPlaybackError(undefined)
-        }}
-        onWaiting={() => {
-          setIsBuffering(true)
-        }}
-        onLoadStart={() => {
-          isMediaReadyRef.current = false
-          setIsBuffering(true)
-        }}
-        onCanPlay={() => {
-          isMediaReadyRef.current = true
-          setIsBuffering(false)
-          const player = playerRef.current
-          const pending = pendingSyncRef.current
-          if (!player || !pending) {
-            return
-          }
-
-          const localSeekIntent = localSeekIntentRef.current
-          const nowMs = Date.now()
-          const pendingToApply =
-            localSeekIntent &&
-            nowMs - localSeekIntent.at < 1800 &&
-            Math.abs(pending.timelineAnchorMs - localSeekIntent.targetMs) >= 450
-              ? {
-                  ...pending,
-                  paused: Boolean(player.paused),
-                  timelineAnchorMs: localSeekIntent.targetMs,
-                  serverNowMs: nowMs,
-                }
-              : pending
-          suppressOutgoingRef.current = true
-
-          try {
-            applySyncToPlayer({ player, syncState: pendingToApply })
-            pendingSyncRef.current = null
-          } finally {
-            window.setTimeout(() => {
-              suppressOutgoingRef.current = false
-            }, 80)
-          }
-        }}
-        onSeeked={(detail) => {
-          if (suppressOutgoingRef.current) {
-            return
-          }
-          if (!canControlPlayback) {
-            enforceServerPlaybackState()
-            return
-          }
-
-          const targetMs = Math.max(0, Math.floor(Number(detail) * 1000))
-          registerLocalSeekIntent(targetMs)
-          send("seek:preview", { targetMs, active: false })
-          emitSeek(targetMs)
-        }}
-        onSeeking={(detail) => {
-          if (suppressOutgoingRef.current) {
-            return
-          }
-          if (!canControlPlayback) {
-            enforceServerPlaybackState()
-            return
-          }
-
-          const targetMs = Math.max(0, Math.floor(Number(detail) * 1000))
-          registerLocalSeekIntent(targetMs)
-          send("seek:preview", { targetMs, active: true })
-          emitSeek(targetMs)
-        }}
-        onError={(detail: MediaErrorDetail) => {
-          setPlaybackError(detail)
-          setIsBuffering(false)
-          console.error("[player] playback error", {
-            detail,
-            message: formatMediaErrorDetail(detail),
-            source: current?.playableUrl ?? "",
-          })
-        }}
-        onRateChange={(detail) => {
-          if (suppressOutgoingRef.current) {
-            return
-          }
-          if (!canControlPlayback) {
-            enforceServerPlaybackState()
-            return
-          }
-
-          const nextRate = Number(detail)
-          if (!Number.isFinite(nextRate)) {
-            return
-          }
-          if (Math.abs(nextRate - playbackRef.current.playbackRate) < 0.001) {
-            return
-          }
-
-          send("playback:rate", { playbackRate: nextRate })
-        }}
-        volume={preferredVolume}
-        onVolumeChange={(detail) => {
-          handleVolumeChange(detail)
-        }}
-        onMediaUserLoopChangeRequest={(detail) => {
-          if (suppressOutgoingRef.current) {
-            return
-          }
-          if (!canControlPlayback) {
-            enforceServerPlaybackState()
-            return
-          }
-
-          const nextMode = detail ? "always" : "off"
-          if (nextMode === roomState.playback.videoLoop) {
-            return
-          }
-
-          send("playback:loop:video", { mode: nextMode })
-        }}
-        onEnded={() => {
-          if (suppressOutgoingRef.current) {
-            return
-          }
-          if (!canControlPlayback) {
-            enforceServerPlaybackState()
-            return
-          }
-
-          const nextIndex = getAdjacentPlaylistIndex({
-            currentIndex: roomState.currentIndex,
-            totalItems,
-            loopMode: roomState.playback.playlistLoop,
-            direction: "next",
-          })
-          if (nextIndex === null) {
-            return
-          }
-
-          selectPlaylistIndex(nextIndex)
-        }}
-        onDurationChange={(detail) => {
-          const durationSec = Number(detail)
-          if (!Number.isFinite(durationSec) || durationSec <= 0) {
-            setMediaDurationMs(0)
-            return
-          }
-
-          setMediaDurationMs(Math.floor(durationSec * 1000))
-        }}
-      >
-        <MediaProvider />
-        <DefaultAudioLayout
-          icons={defaultLayoutIcons}
-          slots={{
-            beforePlayButton: previousButtonSlot,
-            afterPlayButton: nextButtonSlot,
+            event.preventDefault()
+            event.stopPropagation()
           }}
-        />
-        <DefaultVideoLayout
-          icons={defaultLayoutIcons}
-          slots={{
-            beforePlayButton: previousButtonSlot,
-            afterPlayButton: nextButtonSlot,
+          onMediaPlayRequest={(event) => {
+            if (canControlPlayback) {
+              return
+            }
+            event.preventDefault()
+            enforceServerPlaybackState()
           }}
-        />
-      </MediaPlayer>
-      {isOtherUserSeeking ? (
+          onMediaPauseRequest={(event) => {
+            if (canControlPlayback) {
+              return
+            }
+            event.preventDefault()
+            enforceServerPlaybackState()
+          }}
+          onPlay={() => {
+            setIsBuffering(false)
+            setPlaybackError(undefined)
+            participantStatusErrorRef.current = null
+            bufferingSinceRef.current = null
+
+            if (suppressOutgoingRef.current) {
+              return
+            }
+            if (!canControlPlayback) {
+              enforceServerPlaybackState()
+              return
+            }
+
+            if (playbackRef.current.paused) {
+              send("playback:toggle", { currentTimeMs: getCurrentTimeMs() })
+            }
+          }}
+          onPause={() => {
+            setIsBuffering(false)
+            bufferingSinceRef.current = null
+            if (suppressOutgoingRef.current) {
+              return
+            }
+            if (!canControlPlayback) {
+              enforceServerPlaybackState()
+              return
+            }
+
+            if (!playbackRef.current.paused) {
+              send("playback:toggle", { currentTimeMs: getCurrentTimeMs() })
+            }
+          }}
+          onPlaying={() => {
+            setIsBuffering(false)
+            setPlaybackError(undefined)
+            participantStatusErrorRef.current = null
+            bufferingSinceRef.current = null
+          }}
+          onWaiting={() => {
+            setIsBuffering(true)
+            if (bufferingSinceRef.current === null) {
+              bufferingSinceRef.current = Date.now()
+            }
+          }}
+          onLoadStart={() => {
+            isMediaReadyRef.current = false
+            setIsBuffering(true)
+            bufferingSinceRef.current = Date.now()
+          }}
+          onCanPlay={() => {
+            isMediaReadyRef.current = true
+            setIsBuffering(false)
+            participantStatusErrorRef.current = null
+            bufferingSinceRef.current = null
+            const player = playerRef.current
+            const pending = pendingSyncRef.current
+            if (!player || !pending) {
+              if (autoPlayAfterLoadRef.current) {
+                autoPlayAfterLoadRef.current = false
+                send("playback:toggle", { currentTimeMs: 0 })
+              }
+              return
+            }
+
+            const localSeekIntent = localSeekIntentRef.current
+            const nowMs = Date.now()
+            const pendingToApply =
+              localSeekIntent &&
+              nowMs - localSeekIntent.at < 1800 &&
+              Math.abs(pending.timelineAnchorMs - localSeekIntent.targetMs) >=
+                450
+                ? {
+                    ...pending,
+                    paused: Boolean(player.paused),
+                    timelineAnchorMs: localSeekIntent.targetMs,
+                    serverNowMs: nowMs,
+                  }
+                : pending
+            suppressOutgoingRef.current = true
+
+            try {
+              applySyncToPlayer({ player, syncState: pendingToApply })
+              pendingSyncRef.current = null
+            } catch {
+              pendingSyncRef.current = pendingToApply
+              console.warn("[player] applySyncToPlayer failed (onCanPlay)", {
+                itemId: current?.id,
+                itemName: current?.name,
+                src: activePlaybackSrc,
+                viewType,
+                pendingToApply,
+              })
+            } finally {
+              if (autoPlayAfterLoadRef.current) {
+                autoPlayAfterLoadRef.current = false
+                send("playback:toggle", { currentTimeMs: 0 })
+              }
+              window.setTimeout(() => {
+                suppressOutgoingRef.current = false
+              }, 80)
+            }
+          }}
+          onSeeked={(detail) => {
+            if (suppressOutgoingRef.current) {
+              return
+            }
+            if (!canControlPlayback) {
+              enforceServerPlaybackState()
+              return
+            }
+
+            const targetMs = Math.max(0, Math.floor(Number(detail) * 1000))
+            registerLocalSeekIntent(targetMs)
+            send("seek:preview", { targetMs, active: false })
+            emitSeek(targetMs)
+          }}
+          onSeeking={(detail) => {
+            if (suppressOutgoingRef.current) {
+              return
+            }
+            if (!canControlPlayback) {
+              enforceServerPlaybackState()
+              return
+            }
+
+            const targetMs = Math.max(0, Math.floor(Number(detail) * 1000))
+            registerLocalSeekIntent(targetMs)
+            send("seek:preview", { targetMs, active: true })
+            emitSeek(targetMs)
+          }}
+          onError={(detail: MediaErrorDetail) => {
+            setPlaybackError(detail)
+            setIsBuffering(false)
+            participantStatusErrorRef.current = null
+            bufferingSinceRef.current = null
+            if (
+              current &&
+              canControlPlayback &&
+              reportedItemErrorRef.current !== current.id
+            ) {
+              reportedItemErrorRef.current = current.id
+              const message = formatMediaErrorDetail(detail)
+              toast.error(message)
+              send("playlist:item:error", {
+                itemId: current.id,
+                error: message,
+              })
+            }
+            console.error("[player] playback error", {
+              detail,
+              message: formatMediaErrorDetail(detail),
+              source: current?.playableUrl ?? "",
+            })
+          }}
+          onRateChange={(detail) => {
+            if (suppressOutgoingRef.current) {
+              return
+            }
+            if (!canControlPlayback) {
+              enforceServerPlaybackState()
+              return
+            }
+
+            const nextRate = Number(detail)
+            if (!Number.isFinite(nextRate)) {
+              return
+            }
+            if (Math.abs(nextRate - playbackRef.current.playbackRate) < 0.001) {
+              return
+            }
+
+            send("playback:rate", { playbackRate: nextRate })
+          }}
+          volume={preferredVolume}
+          onVolumeChange={(detail) => {
+            handleVolumeChange(detail)
+          }}
+          onMediaUserLoopChangeRequest={(detail) => {
+            if (suppressOutgoingRef.current) {
+              return
+            }
+            if (!canControlPlayback) {
+              enforceServerPlaybackState()
+              return
+            }
+
+            const nextMode = detail ? "always" : "off"
+            if (nextMode === roomState.playback.videoLoop) {
+              return
+            }
+
+            send("playback:loop:video", { mode: nextMode })
+          }}
+          onEnded={() => {
+            if (suppressOutgoingRef.current) {
+              return
+            }
+            if (!canControlPlayback) {
+              enforceServerPlaybackState()
+              return
+            }
+
+            const nextIndex = getAdjacentPlaylistIndex({
+              currentIndex: roomState.currentIndex,
+              totalItems,
+              loopMode: roomState.playback.playlistLoop,
+              direction: "next",
+            })
+            if (nextIndex === null) {
+              return
+            }
+
+            selectPlaylistIndex(nextIndex)
+          }}
+          onDurationChange={(detail) => {
+            const durationSec = Number(detail)
+            if (!Number.isFinite(durationSec) || durationSec <= 0) {
+              setMediaDurationMs(0)
+              return
+            }
+
+            setMediaDurationMs(Math.floor(durationSec * 1000))
+          }}
+        >
+          <MediaProvider />
+          {(current?.textTracks ?? []).map((track) => (
+            <Track
+              key={track.id}
+              src={track.src}
+              label={track.label}
+              kind={track.kind ?? "subtitles"}
+              language={track.language}
+              default={Boolean(
+                current?.selectedTextTrackId
+                  ? track.id === current.selectedTextTrackId
+                  : track.isDefault,
+              )}
+            />
+          ))}
+          <DefaultAudioLayout
+            icons={defaultLayoutIcons}
+            slots={{
+              beforePlayButton: previousButtonSlot,
+              afterPlayButton: nextButtonSlot,
+            }}
+          />
+          <DefaultVideoLayout
+            icons={defaultLayoutIcons}
+            slots={{
+              beforePlayButton: previousButtonSlot,
+              afterPlayButton: nextButtonSlot,
+            }}
+          />
+        </MediaPlayer>
+      ) : (
+        <Empty className="m-3 border-border/60 bg-black/20 text-white">
+          <EmptyHeader>
+            <EmptyTitle>No media selected</EmptyTitle>
+            <EmptyDescription className="text-white/75">
+              Add a media URL or a local file to start playback.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent className="max-w-xl">
+            <PlaylistAddMediaControls
+              roomId={roomState.roomId}
+              userId={userId}
+              send={send}
+              canManagePlaylist={canControlPlayback}
+              className="flex w-full flex-wrap items-center justify-center gap-2"
+            />
+          </EmptyContent>
+        </Empty>
+      )}
+      {isOtherUserSeeking && (
         <RemoteSeekOverlay
           remoteSeekerName={remoteSeekerName}
           seekProgressPercent={seekProgressPercent}
           remoteSeekTargetMs={remoteSeekTargetMs}
           totalTimeLabel={totalTimeLabel}
         />
-      ) : null}
+      )}
+      {playbackErrorLabel && (
+        <div className="absolute inset-x-3 bottom-3 z-30 pointer-events-auto sm:inset-x-auto sm:w-104">
+          <ControlPanel
+            title="Playback Error Recovery"
+            currentName={current?.name}
+            paused={roomState.playback.paused}
+            elapsedMs={elapsedMs}
+            totalDurationMs={totalDurationMs}
+            currentIndex={roomState.currentIndex}
+            totalItems={roomState.playlist.length}
+            playlistLoop={roomState.playback.playlistLoop}
+            controlsDisabled={controlsDisabled}
+            canControl={canControlPlayback}
+            authorizationHint={playbackErrorLabel}
+            disabledHint={
+              isOtherUserSeeking
+                ? `${remoteSeekerName} is seeking: controls are temporarily disabled.`
+                : undefined
+            }
+            onToggle={(currentTimeMs) => {
+              if (!canControlPlayback) {
+                enforceServerPlaybackState()
+                return
+              }
+              send("playback:toggle", { currentTimeMs })
+            }}
+            onSelectAdjacent={(direction) => {
+              handlePlaylistStep(direction)
+            }}
+            onStepBy={(deltaMs) => {
+              if (!canControlPlayback) {
+                enforceServerPlaybackState()
+                return
+              }
+              send("playback:seek", {
+                targetMs: Math.max(0, elapsedMs + deltaMs),
+              })
+            }}
+            onSeekPreview={(targetMs, active) => {
+              if (!canControlPlayback) {
+                return
+              }
+              send("seek:preview", { targetMs, active })
+            }}
+            onSeekCommit={(targetMs) => {
+              if (!canControlPlayback) {
+                return
+              }
+              registerLocalSeekIntent(targetMs)
+              send("playback:seek", { targetMs })
+            }}
+          />
+        </div>
+      )}
       <style jsx global>{`
         .remote-seek-controls-hidden .vds-controls {
           opacity: 0 !important;

@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ItemGroup } from "@/components/ui/item"
 import { useMemo } from "react"
-import type { RoomPanelProps } from "../types"
+import type { RoomPanelProps } from "../../layout/page/types"
 import { UserItem } from "./UserItem"
 
 export function UsersPanel({ roomState, send, userId }: RoomPanelProps) {

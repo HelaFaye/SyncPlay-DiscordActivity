@@ -1,4 +1,4 @@
-import { ControlClient } from "@/components/panel/ControlClient"
+import { ControlClient } from "@/components/layout/page/ControlClient"
 
 export default async function RoomControlPage({
   params,

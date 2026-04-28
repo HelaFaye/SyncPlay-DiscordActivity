@@ -3,7 +3,7 @@
 import { CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getFilteredLogs, getLogUsers } from "@/lib/log-format"
 import { useMemo, useState } from "react"
-import type { RoomPanelProps } from "../types"
+import type { RoomPanelProps } from "../../layout/page/types"
 import { LogFilters } from "./LogFilters"
 import { LogTable } from "./LogTable"
 

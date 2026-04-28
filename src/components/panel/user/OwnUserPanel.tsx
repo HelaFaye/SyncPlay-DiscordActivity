@@ -1,7 +1,7 @@
 "use client"
 
 import { Card, CardContent } from "@/components/ui/card"
-import type { RoomPanelProps } from "../types"
+import type { RoomPanelProps } from "../../layout/page/types"
 import { UserItem } from "./UserItem"
 
 export function OwnUserPanel({ roomState, send, userId }: RoomPanelProps) {

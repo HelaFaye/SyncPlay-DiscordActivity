@@ -1,6 +1,6 @@
 "use client"
 
-import { ShareRoomDialog } from "@/components/panel/ShareRoomDialog"
+import { ShareRoomDialog } from "@/components/dialog/ShareRoomDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,7 +21,7 @@ import { QRCodeSVG } from "qrcode.react"
 import { useState } from "react"
 import { toast } from "sonner"
 
-export function RoomNavbar(props: {
+export function SiteNavbar(props: {
   roomId: string
   paused: boolean
   currentName?: string

@@ -34,6 +34,32 @@ export function repairCleanupAndCheckRoomState(state: RoomState) {
       typeof item.sourceUrl === "string" &&
       typeof item.playableUrl === "string",
   )
+  for (const item of state.playlist) {
+    if (item.sourceKind !== "remote_url" && item.sourceKind !== "local_file") {
+      item.sourceKind = item.localMediaId ? "local_file" : "remote_url"
+      findings.push("playlist-item-source-kind-repaired")
+    }
+    if (item.playbackMode !== "direct" && item.playbackMode !== "relay") {
+      item.playbackMode = "direct"
+      findings.push("playlist-item-playback-mode-repaired")
+    }
+    if (
+      item.ingestStatus !== "ready" &&
+      item.ingestStatus !== "resolving" &&
+      item.ingestStatus !== "error"
+    ) {
+      item.ingestStatus = item.isResolving
+        ? "resolving"
+        : item.resolutionError
+          ? "error"
+          : "ready"
+      findings.push("playlist-item-ingest-status-repaired")
+    }
+    if (!item.ingestError && typeof item.resolutionError === "string") {
+      item.ingestError = item.resolutionError
+      findings.push("playlist-item-ingest-error-migrated")
+    }
+  }
 
   if (state.currentIndex >= state.playlist.length) {
     state.currentIndex = Math.max(0, state.playlist.length - 1)

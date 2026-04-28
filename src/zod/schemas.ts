@@ -39,6 +39,32 @@ export const playlistAddUrlSchema = z.object({
   url: z.url(),
 })
 
+export const playlistAddLocalSchema = z.object({
+  localMediaId: z.string().min(1),
+  name: z.string().min(1).max(256),
+  mimeType: z.string().min(1).max(128).optional(),
+  sizeBytes: z.number().int().min(0).optional(),
+})
+
+export const playlistRetrySchema = z.object({
+  itemId: z.string().min(1),
+})
+
+export const playlistItemErrorSchema = z.object({
+  itemId: z.string().min(1),
+  error: z.string().min(1).max(300),
+})
+
+export const playlistStreamSelectSchema = z.object({
+  itemId: z.string().min(1),
+  streamId: z.string().min(1),
+})
+
+export const playlistTextTrackSelectSchema = z.object({
+  itemId: z.string().min(1),
+  textTrackId: z.string().min(1).nullable(),
+})
+
 export const participantUpdateSchema = z.object({
   username: z.string().min(1).max(64).optional(),
   avatarStyle: z.string().min(1).max(64).optional(),

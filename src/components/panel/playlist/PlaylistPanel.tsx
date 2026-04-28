@@ -1,13 +1,11 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
 import {
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { ItemGroup } from "@/components/ui/item"
 import {
   Select,
@@ -24,8 +22,8 @@ import { DragDropProvider } from "@dnd-kit/react"
 import { isSortable } from "@dnd-kit/react/sortable"
 import { Loader2 } from "lucide-react"
 import { useState } from "react"
-import { toast } from "sonner"
-import type { RoomPanelProps } from "../types"
+import type { RoomPanelProps } from "../../layout/page/types"
+import { PlaylistAddMediaControls } from "./PlaylistAddMediaControls"
 import { PlaylistItemRow } from "./PlaylistItemRow"
 
 function renderItemDuration(durationSeconds?: number): string | null {
@@ -45,7 +43,6 @@ export function PlaylistPanel({
   userId,
   capabilities,
 }: RoomPanelProps) {
-  const [url, setUrl] = useState("")
   const [draftName, setDraftName] = useState<Record<string, string>>({})
   const myRole = roomState.participants[userId]?.role
   const canManagePlaylist =
@@ -66,16 +63,8 @@ export function PlaylistPanel({
     return sum
   }, 0)
   const resolvingCount = roomState.playlist.filter(
-    (item) => item.isResolving,
+    (item) => item.isResolving || item.ingestStatus === "resolving",
   ).length
-
-  const addMedia = async () => {
-    const trimmedUrl = url.trim()
-    if (!canManagePlaylist || !trimmedUrl) return
-    send("playlist:add:url", { url: trimmedUrl })
-    setUrl("")
-    toast.success("Added URL, resolving metadata in background")
-  }
 
   const commitItemName = (itemId: string, currentName: string) => {
     const rawDraft = draftName[itemId]
@@ -134,20 +123,12 @@ export function PlaylistPanel({
             Total length: {formatDurationSeconds(totalDurationSeconds)}
           </span>
         </CardDescription>
-        <div className="flex items-center gap-2">
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="Media URL"
-            disabled={!canManagePlaylist}
-          />
-          <Button
-            onClick={addMedia}
-            disabled={!canManagePlaylist || !url.trim()}
-          >
-            Add Media
-          </Button>
-        </div>
+        <PlaylistAddMediaControls
+          roomId={roomState.roomId}
+          userId={userId}
+          send={send}
+          canManagePlaylist={canManagePlaylist}
+        />
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-3">
         <DragDropProvider
@@ -197,7 +178,6 @@ export function PlaylistPanel({
                   onDraftCancel={() =>
                     setDraftName((prev) => ({ ...prev, [x.id]: x.name }))
                   }
-                  onPlay={() => send("playlist:select", { index: i })}
                   onMoveUp={() =>
                     send("playlist:reorder", {
                       from: i,
@@ -210,6 +190,7 @@ export function PlaylistPanel({
                       to: Math.min(roomState.playlist.length - 1, i + 1),
                     })
                   }
+                  onRetry={() => send("playlist:retry", { itemId: x.id })}
                 />
               )
             })}

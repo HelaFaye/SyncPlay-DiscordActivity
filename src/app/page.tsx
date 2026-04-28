@@ -1,4 +1,4 @@
-import { LandingHero } from "@/components/LandingHero"
+import { LandingHero } from "@/components/layout/LandingHero"
 import { randomRoomId } from "@/lib/room-utils"
 
 export default function LandingPage() {

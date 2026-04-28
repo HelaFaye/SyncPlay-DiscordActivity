@@ -19,23 +19,60 @@ export function usePlayerSync() {
       syncState: PlaybackSyncState
       driftThresholdSec?: number
     }) => {
-      const { player, syncState, driftThresholdSec = 0.8 } = config
-      const expectedTimeSec = computeExpectedPlaybackTimeSec(syncState)
-      player.playbackRate = syncState.playbackRate
-      if (syncState.paused) {
-        player.pause()
-      } else {
-        void player.play()
-      }
+      try {
+        const { player, syncState, driftThresholdSec = 0.8 } = config
+        const expectedTimeSec = computeExpectedPlaybackTimeSec(syncState)
 
-      if (
-        isPlaybackDriftBeyondThreshold(
-          Number(player.currentTime ?? 0),
-          expectedTimeSec,
-          driftThresholdSec,
-        )
-      ) {
-        player.currentTime = expectedTimeSec
+        const nextRate = Number(syncState.playbackRate)
+        if (Number.isFinite(nextRate)) {
+          try {
+            player.playbackRate = nextRate
+          } catch {
+            // Ignore transient setter failures while provider is rebuilding.
+          }
+        }
+
+        if (syncState.paused) {
+          if (typeof player.pause === "function") {
+            try {
+              player.pause()
+            } catch {
+              return
+            }
+          }
+        } else {
+          if (typeof player.play === "function") {
+            try {
+              const playResult = player.play()
+              const maybeCatch = (playResult as unknown as { catch?: unknown } | null)
+                ?.catch
+              if (typeof maybeCatch === "function") {
+                ;(playResult as Promise<void>).catch(() => {})
+              }
+            } catch {
+              return
+            }
+          }
+        }
+
+        const currentTimeSec = Number(player.currentTime ?? 0)
+        if (
+          Number.isFinite(currentTimeSec) &&
+          Number.isFinite(expectedTimeSec) &&
+          isPlaybackDriftBeyondThreshold(
+            currentTimeSec,
+            expectedTimeSec,
+            driftThresholdSec,
+          )
+        ) {
+          try {
+            player.currentTime = expectedTimeSec
+          } catch {
+            // Ignore transient seek failures while provider is rebuilding.
+          }
+        }
+      } catch {
+        // Never allow sync application to crash event handlers.
       }
     },
     [],

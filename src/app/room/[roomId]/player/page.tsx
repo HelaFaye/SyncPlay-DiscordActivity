@@ -1,4 +1,4 @@
-import { PlayerEmbedClient } from "@/components/panel/PlayerEmbedClient"
+import { PlayerEmbedClient } from "@/components/layout/page/PlayerEmbedClient"
 
 export default async function RoomPlayerPage({
   params,
