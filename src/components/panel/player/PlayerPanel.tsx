@@ -33,11 +33,17 @@ import { toast } from "sonner"
 import type { RoomPanelProps } from "../../layout/page/types"
 import { ControlPanel } from "../control/ControlPanel"
 import { PlaylistAddMediaControls } from "../playlist/PlaylistAddMediaControls"
-import { RemoteSeekOverlay } from "./RemoteSeekOverlay"
+import {
+  useBufferingWatchdog,
+  type PendingSyncState,
+} from "./hooks/use-buffering-watchdog"
 import { usePlayerPermissions } from "./hooks/use-player-permissions"
 import { usePlayerSync } from "./hooks/use-player-sync"
 import { usePlayerVolume } from "./hooks/use-player-volume"
 import { useRemoteSeekOverlay } from "./hooks/use-remote-seek-overlay"
+import { createPlaybackActions } from "./playback-control/use-playback-actions"
+import { useSeekLifecycle } from "./playback-control/use-seek-lifecycle"
+import { RemoteSeekOverlay } from "./RemoteSeekOverlay"
 
 function formatMediaErrorDetail(detail: MediaErrorDetail) {
   if (typeof detail === "string") {
@@ -87,15 +93,10 @@ export function PlayerPanel({
   const localSeekIntentRef = useRef<{ targetMs: number; at: number } | null>(
     null,
   )
-  const pendingSyncRef = useRef<{
-    paused: boolean
-    playbackRate: number
-    timelineAnchorMs: number
-    serverNowMs: number
-    videoLoop: boolean
-  } | null>(null)
+  const pendingSyncRef = useRef<PendingSyncState | null>(null)
 
   const reportedItemErrorRef = useRef<string | null>(null)
+
   const [isBuffering, setIsBuffering] = useState(false)
   const [mediaDurationMs, setMediaDurationMs] = useState(0)
   const [playbackError, setPlaybackError] = useState<
@@ -346,77 +347,20 @@ export function PlayerPanel({
     viewType,
   ])
 
-  useEffect(() => {
-    if (!current) {
-      return
-    }
-    if (!isBuffering) {
-      return
-    }
-
-    const startedAt = bufferingSinceRef.current
-    if (!startedAt) {
-      return
-    }
-
-    const watchdogMs = 12_000
-    const now = Date.now()
-    const remainingMs = watchdogMs - (now - startedAt)
-    if (remainingMs <= 0) {
-      return
-    }
-
-    const timer = window.setTimeout(
-      () => {
-        if (!isBuffering) return
-        if (bufferingSinceRef.current !== startedAt) return
-
-        participantStatusErrorRef.current = "Playback stalled: recovering…"
-        console.error("[player] buffering watchdog triggered", {
-          itemId: current.id,
-          itemName: current.name,
-          src: activePlaybackSrc,
-          viewType,
-          isMediaReady: isMediaReadyRef.current,
-          pendingSync: pendingSyncRef.current,
-          roomPaused: roomState.playback.paused,
-          roomRate: roomState.playback.playbackRate,
-          roomAnchorMs: roomState.playback.timelineAnchorMs,
-          roomServerNowMs: roomState.playback.serverNowMs,
-        })
-
-        // Keep a sync state ready to apply after recovery/remount.
-        pendingSyncRef.current = {
-          paused: roomState.playback.paused,
-          playbackRate: roomState.playback.playbackRate,
-          timelineAnchorMs: roomState.playback.timelineAnchorMs,
-          serverNowMs: roomState.playback.serverNowMs,
-          videoLoop: roomState.playback.videoLoop !== "off",
-        }
-
-        isMediaReadyRef.current = false
-        suppressOutgoingRef.current = true
-        setIsBuffering(true)
-        setPlayerRemountNonce((n) => n + 1)
-        window.setTimeout(() => {
-          suppressOutgoingRef.current = false
-        }, 200)
-      },
-      Math.max(250, remainingMs),
-    )
-
-    return () => window.clearTimeout(timer)
-  }, [
+  useBufferingWatchdog({
+    currentItem: current ? { id: current.id, name: current.name } : null,
     activePlaybackSrc,
-    current,
-    isBuffering,
-    roomState.playback.paused,
-    roomState.playback.playbackRate,
-    roomState.playback.serverNowMs,
-    roomState.playback.timelineAnchorMs,
-    roomState.playback.videoLoop,
     viewType,
-  ])
+    isBuffering,
+    isMediaReadyRef,
+    bufferingSinceRef,
+    participantStatusErrorRef,
+    pendingSyncRef,
+    suppressOutgoingRef,
+    roomPlayback: roomState.playback,
+    setIsBuffering,
+    setPlayerRemountNonce,
+  })
 
   const selectPlaylistIndex = useCallback(
     (targetIndex: number) => {
@@ -499,13 +443,6 @@ export function PlayerPanel({
     [canControlPlayback, handlePlaylistStep, hasNextItem],
   )
 
-  const emitSeek = useCallback(
-    (targetMs: number) => {
-      send("playback:seek", { targetMs })
-    },
-    [send],
-  )
-
   const registerLocalSeekIntent = useCallback((targetMs: number) => {
     localSeekIntentRef.current = { targetMs, at: Date.now() }
     const player = playerRef.current
@@ -532,6 +469,17 @@ export function PlayerPanel({
   )
 
   const totalDurationMs = Math.floor((current?.durationSeconds ?? 0) * 1000)
+  const playbackActions = createPlaybackActions({
+    roomState,
+    send,
+    controlsDisabled,
+    elapsedMs,
+  })
+  const seekLifecycle = useSeekLifecycle({
+    onSeekPreview: playbackActions.seekPreview,
+    onSeekCommit: playbackActions.seek,
+    onRegisterLocalSeekIntent: registerLocalSeekIntent,
+  })
 
   return (
     <div className="relative aspect-video size-full bg-black sm:col-span-2 xl:col-span-3">
@@ -594,7 +542,7 @@ export function PlayerPanel({
             }
 
             if (playbackRef.current.paused) {
-              send("playback:toggle", { currentTimeMs: getCurrentTimeMs() })
+              send("playback:play", { currentTimeMs: getCurrentTimeMs() })
             }
           }}
           onPause={() => {
@@ -609,7 +557,7 @@ export function PlayerPanel({
             }
 
             if (!playbackRef.current.paused) {
-              send("playback:toggle", { currentTimeMs: getCurrentTimeMs() })
+              send("playback:pause", { currentTimeMs: getCurrentTimeMs() })
             }
           }}
           onPlaying={() => {
@@ -639,7 +587,7 @@ export function PlayerPanel({
             if (!player || !pending) {
               if (autoPlayAfterLoadRef.current) {
                 autoPlayAfterLoadRef.current = false
-                send("playback:toggle", { currentTimeMs: 0 })
+                send("playback:play", { currentTimeMs: 0 })
               }
               return
             }
@@ -675,7 +623,7 @@ export function PlayerPanel({
             } finally {
               if (autoPlayAfterLoadRef.current) {
                 autoPlayAfterLoadRef.current = false
-                send("playback:toggle", { currentTimeMs: 0 })
+                send("playback:play", { currentTimeMs: 0 })
               }
               window.setTimeout(() => {
                 suppressOutgoingRef.current = false
@@ -692,9 +640,8 @@ export function PlayerPanel({
             }
 
             const targetMs = Math.max(0, Math.floor(Number(detail) * 1000))
-            registerLocalSeekIntent(targetMs)
-            send("seek:preview", { targetMs, active: false })
-            emitSeek(targetMs)
+            seekLifecycle.previewStop(targetMs)
+            seekLifecycle.commit(targetMs)
           }}
           onSeeking={(detail) => {
             if (suppressOutgoingRef.current) {
@@ -706,9 +653,7 @@ export function PlayerPanel({
             }
 
             const targetMs = Math.max(0, Math.floor(Number(detail) * 1000))
-            registerLocalSeekIntent(targetMs)
-            send("seek:preview", { targetMs, active: true })
-            emitSeek(targetMs)
+            seekLifecycle.previewStart(targetMs)
           }}
           onError={(detail: MediaErrorDetail) => {
             setPlaybackError(detail)
@@ -869,9 +814,6 @@ export function PlayerPanel({
             paused={roomState.playback.paused}
             elapsedMs={elapsedMs}
             totalDurationMs={totalDurationMs}
-            currentIndex={roomState.currentIndex}
-            totalItems={roomState.playlist.length}
-            playlistLoop={roomState.playback.playlistLoop}
             controlsDisabled={controlsDisabled}
             canControl={canControlPlayback}
             authorizationHint={playbackErrorLabel}
@@ -880,38 +822,18 @@ export function PlayerPanel({
                 ? `${remoteSeekerName} is seeking: controls are temporarily disabled.`
                 : undefined
             }
-            onToggle={(currentTimeMs) => {
-              if (!canControlPlayback) {
-                enforceServerPlaybackState()
-                return
-              }
-              send("playback:toggle", { currentTimeMs })
-            }}
-            onSelectAdjacent={(direction) => {
-              handlePlaylistStep(direction)
-            }}
-            onStepBy={(deltaMs) => {
-              if (!canControlPlayback) {
-                enforceServerPlaybackState()
-                return
-              }
-              send("playback:seek", {
-                targetMs: Math.max(0, elapsedMs + deltaMs),
-              })
-            }}
+            onPlay={playbackActions.play}
+            onPause={playbackActions.pause}
+            onSelectAdjacent={handlePlaylistStep}
+            onStepBy={playbackActions.stepBy}
             onSeekPreview={(targetMs, active) => {
-              if (!canControlPlayback) {
+              if (active) {
+                seekLifecycle.previewStart(targetMs)
                 return
               }
-              send("seek:preview", { targetMs, active })
+              seekLifecycle.previewStop(targetMs)
             }}
-            onSeekCommit={(targetMs) => {
-              if (!canControlPlayback) {
-                return
-              }
-              registerLocalSeekIntent(targetMs)
-              send("playback:seek", { targetMs })
-            }}
+            onSeekCommit={seekLifecycle.commit}
           />
         </div>
       )}

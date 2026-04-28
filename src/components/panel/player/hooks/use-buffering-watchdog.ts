@@ -1,0 +1,131 @@
+"use client"
+
+import {
+  useEffect,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from "react"
+
+export interface PendingSyncState {
+  paused: boolean
+  playbackRate: number
+  timelineAnchorMs: number
+  serverNowMs: number
+  videoLoop: boolean
+}
+
+export function useBufferingWatchdog(config: {
+  currentItem: { id: string; name: string } | null
+  activePlaybackSrc: string
+  viewType: "audio" | "video"
+  isBuffering: boolean
+  isMediaReadyRef: RefObject<boolean>
+  bufferingSinceRef: RefObject<number | null>
+  participantStatusErrorRef: RefObject<string | null>
+  pendingSyncRef: RefObject<PendingSyncState | null>
+  suppressOutgoingRef: RefObject<boolean>
+  roomPlayback: {
+    paused: boolean
+    playbackRate: number
+    timelineAnchorMs: number
+    serverNowMs: number
+    videoLoop: string
+  }
+  setIsBuffering: (next: boolean) => void
+  setPlayerRemountNonce: Dispatch<SetStateAction<number>>
+}) {
+  const {
+    currentItem,
+    activePlaybackSrc,
+    viewType,
+    isBuffering,
+    isMediaReadyRef,
+    bufferingSinceRef,
+    participantStatusErrorRef,
+    pendingSyncRef,
+    suppressOutgoingRef,
+    roomPlayback,
+    setIsBuffering,
+    setPlayerRemountNonce,
+  } = config
+
+  useEffect(() => {
+    if (!currentItem) {
+      return
+    }
+    if (!isBuffering) {
+      return
+    }
+
+    const startedAt = bufferingSinceRef.current
+    if (!startedAt) {
+      return
+    }
+
+    const watchdogMs = 12_000
+    const now = Date.now()
+    const remainingMs = watchdogMs - (now - startedAt)
+    if (remainingMs <= 0) {
+      return
+    }
+
+    const timer = window.setTimeout(
+      () => {
+        if (!isBuffering) return
+        if (bufferingSinceRef.current !== startedAt) return
+
+        participantStatusErrorRef.current = "Playback stalled: recovering…"
+        console.error("[player] buffering watchdog triggered", {
+          itemId: currentItem.id,
+          itemName: currentItem.name,
+          src: activePlaybackSrc,
+          viewType,
+          isMediaReady: isMediaReadyRef.current,
+          pendingSync: pendingSyncRef.current,
+          roomPaused: roomPlayback.paused,
+          roomRate: roomPlayback.playbackRate,
+          roomAnchorMs: roomPlayback.timelineAnchorMs,
+          roomServerNowMs: roomPlayback.serverNowMs,
+        })
+
+        // Keep a sync state ready to apply after recovery/remount.
+        pendingSyncRef.current = {
+          paused: roomPlayback.paused,
+          playbackRate: roomPlayback.playbackRate,
+          timelineAnchorMs: roomPlayback.timelineAnchorMs,
+          serverNowMs: roomPlayback.serverNowMs,
+          videoLoop: roomPlayback.videoLoop !== "off",
+        }
+
+        isMediaReadyRef.current = false
+        suppressOutgoingRef.current = true
+        setIsBuffering(true)
+        setPlayerRemountNonce((n) => n + 1)
+        window.setTimeout(() => {
+          suppressOutgoingRef.current = false
+        }, 200)
+      },
+      Math.max(250, remainingMs),
+    )
+
+    return () => window.clearTimeout(timer)
+  }, [
+    activePlaybackSrc,
+    bufferingSinceRef,
+    currentItem,
+    isBuffering,
+    isMediaReadyRef,
+    participantStatusErrorRef,
+    pendingSyncRef,
+    roomPlayback.paused,
+    roomPlayback.playbackRate,
+    roomPlayback.serverNowMs,
+    roomPlayback.timelineAnchorMs,
+    roomPlayback.videoLoop,
+    setIsBuffering,
+    setPlayerRemountNonce,
+    suppressOutgoingRef,
+    viewType,
+  ])
+}

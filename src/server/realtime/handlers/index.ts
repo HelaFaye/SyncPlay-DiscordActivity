@@ -6,7 +6,8 @@ import type { RoomMessageHandler } from "./types"
 
 export const roomMessageHandlers: Record<string, RoomMessageHandler> = {
   "playback:seek": playback.handlePlaybackSeek,
-  "playback:toggle": playback.handlePlaybackToggle,
+  "playback:play": playback.handlePlaybackPlay,
+  "playback:pause": playback.handlePlaybackPause,
   "playback:rate": playback.handlePlaybackRate,
   "playback:loop:video": playback.handlePlaybackLoopVideo,
   "playback:loop:playlist": playback.handlePlaybackLoopPlaylist,

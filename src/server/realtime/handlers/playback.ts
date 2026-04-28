@@ -1,14 +1,13 @@
 import { appendActionLog } from "@/server/log"
-import {
-  canControlFromConnectionContext,
-} from "@/server/realtime/services/permissions"
+import { canControlFromConnectionContext } from "@/server/realtime/services/permissions"
 import { resolveCurrentTimelineMs } from "@/server/realtime/services/timeline"
 import {
   playbackRateSchema,
   playbackSeekSchema,
-  playbackToggleSchema,
+  playbackSetPausedSchema,
 } from "@/zod/schemas"
 import type { LoopMode } from "@/zod/types"
+import { z } from "zod"
 import { mutateRoomMessage } from "./mutate-room"
 import type { RoomMessageHandler } from "./types"
 
@@ -54,9 +53,17 @@ export const handlePlaybackSeek: RoomMessageHandler = async (ctx, data) => {
   )
 }
 
-export const handlePlaybackToggle: RoomMessageHandler = async (ctx, data) => {
-  const toggleResult = playbackToggleSchema.safeParse(data.payload)
-  if (!toggleResult.success) {
+const playbackLoopModeSchema = z.object({
+  mode: z.enum(["off", "always", "once"]),
+})
+
+async function setPlaybackPausedState(
+  ctx: Parameters<RoomMessageHandler>[0],
+  data: Parameters<RoomMessageHandler>[1],
+  paused: boolean,
+) {
+  const payloadResult = playbackSetPausedSchema.safeParse(data.payload)
+  if (!payloadResult.success) {
     return
   }
 
@@ -76,22 +83,30 @@ export const handlePlaybackToggle: RoomMessageHandler = async (ctx, data) => {
       const nowMs = Date.now()
       const projectedMs = resolveCurrentTimelineMs(state, nowMs)
       const nextAnchorMs = Number(
-        toggleResult.data.currentTimeMs ?? projectedMs,
+        payloadResult.data.currentTimeMs ?? projectedMs,
       )
       const syncNow = nextMonotonicMs(state.playback.serverNowMs, nowMs)
       state.playback.timelineAnchorMs = Math.max(0, nextAnchorMs)
-      state.playback.paused = !state.playback.paused
+      state.playback.paused = paused
       state.playback.serverNowMs = syncNow
       appendActionLog(state, {
         roomId: ctx.roomId,
         actorUserId: ctx.userId,
         actorUsername: participant.username,
-        action: state.playback.paused ? "playback:pause" : "playback:unpause",
+        action: paused ? "playback:pause" : "playback:play",
         payload: { atMs: state.playback.timelineAnchorMs },
       })
       return true
     },
   )
+}
+
+export const handlePlaybackPlay: RoomMessageHandler = async (ctx, data) => {
+  await setPlaybackPausedState(ctx, data, false)
+}
+
+export const handlePlaybackPause: RoomMessageHandler = async (ctx, data) => {
+  await setPlaybackPausedState(ctx, data, true)
 }
 
 export const handlePlaybackRate: RoomMessageHandler = async (ctx, data) => {
@@ -134,6 +149,11 @@ export const handlePlaybackLoopVideo: RoomMessageHandler = async (
   ctx,
   data,
 ) => {
+  const modeResult = playbackLoopModeSchema.safeParse(data.payload)
+  if (!modeResult.success) {
+    return
+  }
+
   await mutateRoomMessage(
     ctx.store,
     ctx.roomId,
@@ -148,7 +168,7 @@ export const handlePlaybackLoopVideo: RoomMessageHandler = async (
         return false
       }
       const previousMode = state.playback.videoLoop
-      state.playback.videoLoop = String(data.payload.mode ?? "off") as LoopMode
+      state.playback.videoLoop = modeResult.data.mode as LoopMode
       if (previousMode !== state.playback.videoLoop) {
         appendActionLog(state, {
           roomId: ctx.roomId,
@@ -172,6 +192,11 @@ export const handlePlaybackLoopPlaylist: RoomMessageHandler = async (
   ctx,
   data,
 ) => {
+  const modeResult = playbackLoopModeSchema.safeParse(data.payload)
+  if (!modeResult.success) {
+    return
+  }
+
   await mutateRoomMessage(
     ctx.store,
     ctx.roomId,
@@ -186,9 +211,7 @@ export const handlePlaybackLoopPlaylist: RoomMessageHandler = async (
         return false
       }
       const previousMode = state.playback.playlistLoop
-      state.playback.playlistLoop = String(
-        data.payload.mode ?? "off",
-      ) as LoopMode
+      state.playback.playlistLoop = modeResult.data.mode as LoopMode
       if (previousMode !== state.playback.playlistLoop) {
         appendActionLog(state, {
           roomId: ctx.roomId,

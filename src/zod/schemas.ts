@@ -21,7 +21,7 @@ export const playbackRateSchema = z.object({
   playbackRate: z.number().min(0.25).max(3),
 })
 
-export const playbackToggleSchema = z.object({
+export const playbackSetPausedSchema = z.object({
   currentTimeMs: z.number().min(0).optional(),
 })
 

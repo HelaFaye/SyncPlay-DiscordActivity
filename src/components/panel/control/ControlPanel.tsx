@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Slider } from "@/components/ui/slider"
-import type { LoopMode } from "@/zod/types"
 import { SkipBack, SkipForward } from "lucide-react"
 
 function formatTime(ms: number) {
@@ -27,14 +26,12 @@ export function ControlPanel(props: {
   paused: boolean
   elapsedMs: number
   totalDurationMs: number
-  currentIndex: number
-  totalItems: number
-  playlistLoop: LoopMode
   controlsDisabled: boolean
   canControl: boolean
   authorizationHint?: string
   disabledHint?: string
-  onToggle: (currentTimeMs: number) => void
+  onPlay: (currentTimeMs: number) => void
+  onPause: (currentTimeMs: number) => void
   onSelectAdjacent: (direction: "previous" | "next") => void
   onStepBy: (deltaMs: number) => void
   onSeekPreview: (targetMs: number, active: boolean) => void
@@ -50,7 +47,8 @@ export function ControlPanel(props: {
     canControl,
     authorizationHint,
     disabledHint,
-    onToggle,
+    onPlay,
+    onPause,
     onSelectAdjacent,
     onStepBy,
     onSeekPreview,
@@ -90,7 +88,13 @@ export function ControlPanel(props: {
           <Button
             className="col-span-3"
             disabled={controlsDisabled}
-            onClick={() => onToggle(elapsedMs)}
+            onClick={() => {
+              if (paused) {
+                onPlay(elapsedMs)
+                return
+              }
+              onPause(elapsedMs)
+            }}
           >
             {paused ? "Play" : "Pause"}
           </Button>

@@ -13,7 +13,8 @@ export interface ClientEventPayloadMap {
     targetUserId: string
     role: Exclude<RoomRole, "owner">
   }
-  "playback:toggle": { currentTimeMs?: number }
+  "playback:play": { currentTimeMs?: number }
+  "playback:pause": { currentTimeMs?: number }
   "playback:seek": { targetMs: number }
   "playback:rate": { playbackRate: number }
   "playback:loop:video": { mode: LoopMode }
