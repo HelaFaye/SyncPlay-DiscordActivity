@@ -8,7 +8,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import {
-  computeExpectedPlaybackTimeSec,
   getAdjacentPlaylistIndex,
   inferMediaViewType,
 } from "@/lib/playback-sync"
@@ -41,8 +40,7 @@ import { usePlayerPermissions } from "./hooks/use-player-permissions"
 import { usePlayerSync } from "./hooks/use-player-sync"
 import { usePlayerVolume } from "./hooks/use-player-volume"
 import { useRemoteSeekOverlay } from "./hooks/use-remote-seek-overlay"
-import { createPlaybackActions } from "./playback-control/use-playback-actions"
-import { useSeekLifecycle } from "./playback-control/use-seek-lifecycle"
+import { usePlaybackTimelineController } from "./playback-control/use-playback-timeline-controller"
 import { RemoteSeekOverlay } from "./RemoteSeekOverlay"
 
 function formatMediaErrorDetail(detail: MediaErrorDetail) {
@@ -90,9 +88,6 @@ export function PlayerPanel({
   const isMediaReadyRef = useRef(false)
   const bufferingSinceRef = useRef<number | null>(null)
   const participantStatusErrorRef = useRef<string | null>(null)
-  const localSeekIntentRef = useRef<{ targetMs: number; at: number } | null>(
-    null,
-  )
   const pendingSyncRef = useRef<PendingSyncState | null>(null)
 
   const reportedItemErrorRef = useRef<string | null>(null)
@@ -143,6 +138,11 @@ export function PlayerPanel({
 
   const canControlPlayback = canControlByRole && capabilities.canControlPlayback
   const controlsDisabled = !canControlPlayback || isOtherUserSeeking
+  const timeline = usePlaybackTimelineController({
+    roomState,
+    send,
+    controlsDisabled,
+  })
   const totalItems = roomState.playlist.length
   const hasPlaylistItems = totalItems > 0
   const canWrapPlaylist = roomState.playback.playlistLoop !== "off"
@@ -180,7 +180,6 @@ export function PlayerPanel({
     autoPlayAfterLoadRef.current = false
     isMediaReadyRef.current = false
     pendingSyncRef.current = null
-    localSeekIntentRef.current = null
     bufferingSinceRef.current = Date.now()
     participantStatusErrorRef.current = null
   }, [current?.id, activePlaybackSrc])
@@ -222,19 +221,9 @@ export function PlayerPanel({
       serverNowMs: roomState.playback.serverNowMs,
       videoLoop: roomState.playback.videoLoop !== "off",
     }
-    const localSeekIntent = localSeekIntentRef.current
-    const nowMs = Date.now()
-    if (
-      localSeekIntent &&
-      Math.abs(syncState.timelineAnchorMs - localSeekIntent.targetMs) < 450
-    ) {
-      localSeekIntentRef.current = null
-    }
-
     const shouldHoldForLocalSeek =
-      localSeekIntent !== null &&
-      nowMs - localSeekIntent.at < 1800 &&
-      Math.abs(syncState.timelineAnchorMs - localSeekIntent.targetMs) >= 450
+      timeline.awaitingSeekTargetMs !== null &&
+      Math.abs(syncState.timelineAnchorMs - timeline.awaitingSeekTargetMs) >= 450
     if (shouldHoldForLocalSeek) {
       return
     }
@@ -274,6 +263,7 @@ export function PlayerPanel({
     roomState.playback.serverNowMs,
     roomState.playback.timelineAnchorMs,
     roomState.playback.videoLoop,
+    timeline.awaitingSeekTargetMs,
     viewType,
   ])
 
@@ -443,43 +433,8 @@ export function PlayerPanel({
     [canControlPlayback, handlePlaylistStep, hasNextItem],
   )
 
-  const registerLocalSeekIntent = useCallback((targetMs: number) => {
-    localSeekIntentRef.current = { targetMs, at: Date.now() }
-    const player = playerRef.current
-    const syncState = playbackRef.current
-
-    pendingSyncRef.current = {
-      paused: Boolean(player?.paused ?? syncState.paused),
-      playbackRate: syncState.playbackRate,
-      timelineAnchorMs: targetMs,
-      serverNowMs: Date.now(),
-      videoLoop: syncState.videoLoop !== "off",
-    }
-  }, [])
-
-  const elapsedMs = useMemo(
-    () =>
-      Math.floor(
-        computeExpectedPlaybackTimeSec(
-          roomState.playback,
-          roomState.playback.serverNowMs,
-        ) * 1000,
-      ),
-    [roomState.playback],
-  )
-
+  const elapsedMs = timeline.elapsedMs
   const totalDurationMs = Math.floor((current?.durationSeconds ?? 0) * 1000)
-  const playbackActions = createPlaybackActions({
-    roomState,
-    send,
-    controlsDisabled,
-    elapsedMs,
-  })
-  const seekLifecycle = useSeekLifecycle({
-    onSeekPreview: playbackActions.seekPreview,
-    onSeekCommit: playbackActions.seek,
-    onRegisterLocalSeekIntent: registerLocalSeekIntent,
-  })
 
   return (
     <div className="relative aspect-video size-full bg-black sm:col-span-2 xl:col-span-3">
@@ -592,18 +547,16 @@ export function PlayerPanel({
               return
             }
 
-            const localSeekIntent = localSeekIntentRef.current
-            const nowMs = Date.now()
             const pendingToApply =
-              localSeekIntent &&
-              nowMs - localSeekIntent.at < 1800 &&
-              Math.abs(pending.timelineAnchorMs - localSeekIntent.targetMs) >=
-                450
+              timeline.awaitingSeekTargetMs !== null &&
+              Math.abs(
+                pending.timelineAnchorMs - timeline.awaitingSeekTargetMs,
+              ) >= 450
                 ? {
                     ...pending,
                     paused: Boolean(player.paused),
-                    timelineAnchorMs: localSeekIntent.targetMs,
-                    serverNowMs: nowMs,
+                    timelineAnchorMs: timeline.awaitingSeekTargetMs,
+                    serverNowMs: Date.now(),
                   }
                 : pending
             suppressOutgoingRef.current = true
@@ -640,8 +593,8 @@ export function PlayerPanel({
             }
 
             const targetMs = Math.max(0, Math.floor(Number(detail) * 1000))
-            seekLifecycle.previewStop(targetMs)
-            seekLifecycle.commit(targetMs)
+            timeline.endSeekPreview(targetMs)
+            timeline.commitSeek(targetMs)
           }}
           onSeeking={(detail) => {
             if (suppressOutgoingRef.current) {
@@ -653,7 +606,11 @@ export function PlayerPanel({
             }
 
             const targetMs = Math.max(0, Math.floor(Number(detail) * 1000))
-            seekLifecycle.previewStart(targetMs)
+            if (timeline.seekPhase === "idle") {
+              timeline.beginSeek(targetMs)
+              return
+            }
+            timeline.updateSeek(targetMs)
           }}
           onError={(detail: MediaErrorDetail) => {
             setPlaybackError(detail)
@@ -822,18 +779,22 @@ export function PlayerPanel({
                 ? `${remoteSeekerName} is seeking: controls are temporarily disabled.`
                 : undefined
             }
-            onPlay={playbackActions.play}
-            onPause={playbackActions.pause}
+            onPlay={timeline.play}
+            onPause={timeline.pause}
             onSelectAdjacent={handlePlaylistStep}
-            onStepBy={playbackActions.stepBy}
+            onStepBy={timeline.stepBy}
             onSeekPreview={(targetMs, active) => {
               if (active) {
-                seekLifecycle.previewStart(targetMs)
+                if (timeline.seekPhase === "idle") {
+                  timeline.beginSeek(targetMs)
+                  return
+                }
+                timeline.updateSeek(targetMs)
                 return
               }
-              seekLifecycle.previewStop(targetMs)
+              timeline.endSeekPreview(targetMs)
             }}
-            onSeekCommit={seekLifecycle.commit}
+            onSeekCommit={timeline.commitSeek}
           />
         </div>
       )}

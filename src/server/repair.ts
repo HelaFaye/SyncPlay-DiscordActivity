@@ -1,4 +1,5 @@
 import { env } from "@/env"
+import { createDefaultRoomSecurity } from "@/server/realtime/services/room-security"
 import type { RoomState } from "@/zod/types"
 import { randomUUID } from "node:crypto"
 import { trackedActionTypes } from "./log"
@@ -20,6 +21,37 @@ export function repairCleanupAndCheckRoomState(state: RoomState) {
   if (!state.ownerId || typeof state.ownerId !== "string") {
     state.ownerId = randomUUID()
     findings.push("owner-repaired")
+  }
+  if (!state.roomSecurity || typeof state.roomSecurity !== "object") {
+    state.roomSecurity = createDefaultRoomSecurity()
+    findings.push("room-security-repaired")
+  } else {
+    state.roomSecurity = {
+      ...createDefaultRoomSecurity(),
+      ...state.roomSecurity,
+      joinPasswordEnabled: state.roomSecurity.joinPasswordEnabled === true,
+      joinPasswordUpdatedAt:
+        typeof state.roomSecurity.joinPasswordUpdatedAt === "number" &&
+        Number.isFinite(state.roomSecurity.joinPasswordUpdatedAt)
+          ? state.roomSecurity.joinPasswordUpdatedAt
+          : null,
+      admissionVersion:
+        typeof state.roomSecurity.admissionVersion === "number" &&
+        Number.isInteger(state.roomSecurity.admissionVersion) &&
+        state.roomSecurity.admissionVersion >= 0
+          ? state.roomSecurity.admissionVersion
+          : 0,
+    }
+    if (
+      state.roomSecurity.joinPasswordEnabled &&
+      (!state.roomSecurity.joinPasswordHash ||
+        !state.roomSecurity.joinPasswordSalt)
+    ) {
+      state.roomSecurity.joinPasswordEnabled = false
+      state.roomSecurity.joinPasswordHash = undefined
+      state.roomSecurity.joinPasswordSalt = undefined
+      findings.push("room-security-disabled-missing-secret")
+    }
   }
 
   if (!Array.isArray(state.playlist)) {
@@ -96,10 +128,12 @@ export function repairCleanupAndCheckRoomState(state: RoomState) {
       participant.joinedAt <= 0
     ) {
       const fallbackJoinedAt =
-        (typeof participant.connectedAt === "number" && participant.connectedAt > 0
+        (typeof participant.connectedAt === "number" &&
+        participant.connectedAt > 0
           ? participant.connectedAt
           : undefined) ??
-        (typeof participant.lastSeenAt === "number" && participant.lastSeenAt > 0
+        (typeof participant.lastSeenAt === "number" &&
+        participant.lastSeenAt > 0
           ? participant.lastSeenAt
           : undefined) ??
         Date.now()

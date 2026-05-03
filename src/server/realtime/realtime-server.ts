@@ -15,21 +15,23 @@ import {
 import { shouldSkipDuplicateRequest } from "@/server/ws/request-dedupe"
 import { attachWebSocketTransport, getLastPongMap } from "@/server/ws/transport"
 import { wsEnvelopeSchema } from "@/zod/schemas"
-import type { WsEnvelope } from "@/zod/types"
+import type { RoomState, WsEnvelope } from "@/zod/types"
 import type { Server as HttpServer } from "node:http"
 import type { WebSocket } from "ws"
 import { roomMessageHandlers } from "./handlers/index"
 import { handleRoomJoin } from "./handlers/join"
 import { transferOwnershipIfNeeded } from "./services/ownership"
+import { sanitizeRoomStateForClient } from "./services/room-security"
 
 function nextMonotonicMs(previous: number, next: number) {
   return Math.max(previous + 1, next)
 }
 
 function broadcastRoomStateLocal(roomId: string, state: unknown) {
-  const event: WsEnvelope<string, unknown> = {
+  const payload = sanitizeRoomStateForClient(state as RoomState)
+  const event: WsEnvelope<"room:state", RoomState> = {
     type: "room:state",
-    payload: state as Record<string, unknown>,
+    payload,
   }
   const raw = JSON.stringify(event)
   for (const client of getSocketsForRoom(roomId)) {

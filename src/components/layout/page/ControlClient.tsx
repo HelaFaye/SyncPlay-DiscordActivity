@@ -1,41 +1,40 @@
 "use client"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Spinner } from "@/components/ui/spinner"
+import { RoomJoinPasswordPrompt } from "@/components/dialog/RoomJoinPasswordPrompt"
 import { useRoomSession } from "@/hooks/use-room-session"
 import { getRoomUrl } from "@/lib/control-url"
-import { computeExpectedPlaybackTimeSec } from "@/lib/playback-sync"
 import { ControlPanel } from "../../panel/control/ControlPanel"
-import { createPlaybackActions } from "../../panel/player/playback-control/use-playback-actions"
 import { getPlaybackPermissionsState } from "../../panel/player/playback-control/use-playback-permissions-state"
+import { usePlaybackTimelineController } from "../../panel/player/playback-control/use-playback-timeline-controller"
 import { OwnUserPanel } from "../../panel/user/OwnUserPanel"
 import { SidePanel } from "../SidePanel"
 import { SiteNavbar } from "../SiteNavbar"
+import { SocketStatus } from "../SocketStatus"
 
-export function ControlClient(props: { roomId: string }) {
-  const { roomId } = props
+function ControlClientReady(props: {
+  roomId: string
+  roomState: NonNullable<ReturnType<typeof useRoomSession>["roomState"]>
+  sessionCapabilities: ReturnType<typeof useRoomSession>["sessionCapabilities"]
+  send: ReturnType<typeof useRoomSession>["send"]
+  userId: string
+  copied: boolean
+  shareUrl: string
+  handleCopyShareUrl: () => void
+  playerEmbedUrl: string
+  controlEmbedUrl: string
+}) {
   const {
+    roomId,
     roomState,
     sessionCapabilities,
     send,
     userId,
-    status,
     copied,
     shareUrl,
     handleCopyShareUrl,
     playerEmbedUrl,
     controlEmbedUrl,
-  } = useRoomSession(roomId)
-
-  if (!roomState) {
-    return (
-      <Alert className="max-w-md">
-        <Spinner className="mt-0.5" />
-        <AlertTitle>Connecting to control session</AlertTitle>
-        <AlertDescription>Socket status: {status}</AlertDescription>
-      </Alert>
-    )
-  }
+  } = props
 
   const canControlBySession =
     !sessionCapabilities.isControlSession ||
@@ -54,12 +53,11 @@ export function ControlClient(props: { roomId: string }) {
       "Secret verification failed: this session is view-only until authenticated.",
   })
   const current = roomState.playlist[roomState.currentIndex]
-  const elapsedMs = Math.floor(
-    computeExpectedPlaybackTimeSec(
-      roomState.playback,
-      roomState.playback.serverNowMs,
-    ) * 1000,
-  )
+  const timeline = usePlaybackTimelineController({
+    roomState,
+    send,
+    controlsDisabled,
+  })
   const totalDurationMs = Math.floor((current?.durationSeconds ?? 0) * 1000)
   const panelProps = {
     roomId,
@@ -72,12 +70,6 @@ export function ControlClient(props: { roomId: string }) {
       canManagePlaylist: canControl,
     },
   }
-  const playbackActions = createPlaybackActions({
-    roomState,
-    send,
-    controlsDisabled,
-    elapsedMs,
-  })
 
   return (
     <>
@@ -92,6 +84,12 @@ export function ControlClient(props: { roomId: string }) {
         shareUrl={shareUrl}
         copied={copied}
         onCopyShareUrl={handleCopyShareUrl}
+        roomSecurity={roomState.roomSecurity}
+        canManageRoomSecurity={
+          roomState.ownerId === userId &&
+          sessionCapabilities.canManageRoomSecurity
+        }
+        send={send}
         showViewMenu={canControlByRole}
       />
       <section className="mx-auto flex w-full flex-1 flex-col gap-3 px-3">
@@ -101,20 +99,73 @@ export function ControlClient(props: { roomId: string }) {
           title="Remote Control"
           currentName={current?.name}
           paused={roomState.playback.paused}
-          elapsedMs={elapsedMs}
+          elapsedMs={timeline.elapsedMs}
           totalDurationMs={totalDurationMs}
           controlsDisabled={controlsDisabled}
           canControl={canControl}
           authorizationHint={authorizationHint}
           disabledHint={disabledHint}
-          onPlay={playbackActions.play}
-          onPause={playbackActions.pause}
-          onSelectAdjacent={playbackActions.selectAdjacent}
-          onStepBy={playbackActions.stepBy}
-          onSeekPreview={playbackActions.seekPreview}
-          onSeekCommit={playbackActions.seek}
+          onPlay={timeline.play}
+          onPause={timeline.pause}
+          onSelectAdjacent={timeline.selectAdjacent}
+          onStepBy={timeline.stepBy}
+          onSeekPreview={(targetMs, active) => {
+            if (active) {
+              timeline.updateSeek(targetMs)
+              return
+            }
+            timeline.endSeekPreview(targetMs)
+          }}
+          onSeekCommit={timeline.commitSeek}
         />
       </section>
     </>
+  )
+}
+
+export function ControlClient(props: { roomId: string }) {
+  const { roomId } = props
+  const {
+    roomState,
+    sessionCapabilities,
+    send,
+    userId,
+    status,
+    joinError,
+    submitJoinPassword,
+    copied,
+    shareUrl,
+    handleCopyShareUrl,
+    playerEmbedUrl,
+    controlEmbedUrl,
+  } = useRoomSession(roomId)
+
+  if (!roomState) {
+    if (status === "awaiting_password") {
+      return (
+        <RoomJoinPasswordPrompt
+          roomId={roomId}
+          title={joinError}
+          onSubmit={submitJoinPassword}
+        />
+      )
+    }
+
+    return <SocketStatus status={status} />
+  }
+
+  return (
+    <ControlClientReady
+      roomId={roomId}
+      roomState={roomState}
+      sessionCapabilities={sessionCapabilities}
+      send={send}
+      userId={userId}
+      copied={copied}
+      shareUrl={shareUrl}
+      handleCopyShareUrl={handleCopyShareUrl}
+      playerEmbedUrl={playerEmbedUrl}
+      controlEmbedUrl={controlEmbedUrl}
+    />
   )
 }

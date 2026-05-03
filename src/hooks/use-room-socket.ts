@@ -5,6 +5,9 @@ import { getRandomName } from "@/lib/room-utils"
 import {
   consumeSessionIdentityFromHash,
   getOrCreateSessionIdentity,
+  getPersistedUsername,
+  persistUsername,
+  stripIdentityHashFromUrl,
 } from "@/lib/session-identity"
 import type { RoomState, WsEnvelope } from "@/zod/types"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -12,9 +15,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 type SessionCapabilities = {
   canControlPlayback: boolean
   canManagePlaylist: boolean
+  canManageRoomSecurity: boolean
   isControlSession: boolean
   controlAuthorized: boolean
 }
+
+export type JoinStatus =
+  | "connecting"
+  | "awaiting_password"
+  | "joining"
+  | "connected"
+  | "reconnecting"
+
+type JoinRejectedReason = "password_required" | "invalid_password"
 
 export function useRoomSocket(roomId: string): {
   roomState: RoomState | null
@@ -22,16 +35,18 @@ export function useRoomSocket(roomId: string): {
   send: TypedRoomEventSender
   userId: string
   userSecret: string
-  status: "connecting" | "connected" | "reconnecting"
+  status: JoinStatus
+  joinError: string | null
+  submitJoinPassword: (password: string) => void
 } {
   const [roomState, setRoomState] = useState<RoomState | null>(null)
-  const [status, setStatus] = useState<
-    "connecting" | "connected" | "reconnecting"
-  >("connecting")
+  const [status, setStatus] = useState<JoinStatus>("connecting")
+  const [joinError, setJoinError] = useState<string | null>(null)
   const [sessionCapabilities, setSessionCapabilities] =
     useState<SessionCapabilities>({
       canControlPlayback: false,
       canManagePlaylist: false,
+      canManageRoomSecurity: false,
       isControlSession: true,
       controlAuthorized: true,
     })
@@ -40,6 +55,8 @@ export function useRoomSocket(roomId: string): {
   const stateTimeoutRef = useRef<number | undefined>(undefined)
   const hasReceivedStateRef = useRef(false)
   const usernameRef = useRef<string>("guest")
+  const joinPasswordRef = useRef<string>("")
+  const sendJoinRef = useRef<(() => void) | null>(null)
 
   const { userId, userSecret } = useMemo(() => {
     consumeSessionIdentityFromHash()
@@ -47,10 +64,34 @@ export function useRoomSocket(roomId: string): {
   }, [])
 
   useEffect(() => {
+    // Some clients briefly re-apply the initial hash during hydration/history sync.
+    // Re-strip identity bootstrap fragments after mount and on hash changes.
+    const strip = () => {
+      stripIdentityHashFromUrl()
+    }
+    strip()
+    const stripTimer = window.setTimeout(strip, 0)
+    const stripRaf = window.requestAnimationFrame(strip)
+    window.addEventListener("hashchange", strip)
+    return () => {
+      window.clearTimeout(stripTimer)
+      window.cancelAnimationFrame(stripRaf)
+      window.removeEventListener("hashchange", strip)
+    }
+  }, [])
+
+  useEffect(() => {
+    const persistedUsername = getPersistedUsername()
+    if (persistedUsername) {
+      usernameRef.current = persistedUsername
+      return
+    }
     try {
       usernameRef.current = getRandomName()
+      persistUsername(usernameRef.current)
     } catch {
       usernameRef.current = "guest"
+      persistUsername(usernameRef.current)
     }
   }, [])
 
@@ -61,9 +102,11 @@ export function useRoomSocket(roomId: string): {
 
     const connect = async (): Promise<void> => {
       hasReceivedStateRef.current = false
+      setJoinError(null)
       setSessionCapabilities({
         canControlPlayback: false,
         canManagePlaylist: false,
+        canManageRoomSecurity: false,
         isControlSession: true,
         controlAuthorized: true,
       })
@@ -99,6 +142,30 @@ export function useRoomSocket(roomId: string): {
       let joinRetryTimer: number | undefined
       let joinAttempts = 0
 
+      const clearStateTimeout = () => {
+        if (stateTimeoutRef.current) {
+          window.clearTimeout(stateTimeoutRef.current)
+          stateTimeoutRef.current = undefined
+        }
+      }
+
+      const scheduleStateTimeout = () => {
+        clearStateTimeout()
+        stateTimeoutRef.current = window.setTimeout(() => {
+          if (cancelled) {
+            return
+          }
+
+          if (
+            ws.readyState === WebSocket.OPEN &&
+            !hasReceivedStateRef.current
+          ) {
+            console.warn("[realtime] no room state after join, reconnecting")
+            ws.close()
+          }
+        }, 5000)
+      }
+
       const sendJoin = (): void => {
         if (cancelled) {
           return
@@ -111,6 +178,8 @@ export function useRoomSocket(roomId: string): {
         }
 
         joinAttempts += 1
+        setStatus(joinPasswordRef.current ? "joining" : "connecting")
+        setJoinError(null)
         try {
           ws.send(
             JSON.stringify({
@@ -123,6 +192,7 @@ export function useRoomSocket(roomId: string): {
                 roomId,
                 userId,
                 userSecret,
+                joinPassword: joinPasswordRef.current || undefined,
                 username: usernameRef.current,
               },
             } satisfies WsEnvelope<string, Record<string, unknown>>),
@@ -132,10 +202,12 @@ export function useRoomSocket(roomId: string): {
           return
         }
 
+        scheduleStateTimeout()
         if (joinAttempts < 3 && !hasReceivedStateRef.current) {
           joinRetryTimer = window.setTimeout(sendJoin, 800)
         }
       }
+      sendJoinRef.current = sendJoin
 
       ws.onopen = () => {
         setStatus("connected")
@@ -147,11 +219,15 @@ export function useRoomSocket(roomId: string): {
 
         if (envelope.type === "room:state") {
           hasReceivedStateRef.current = true
-          if (stateTimeoutRef.current) {
-            window.clearTimeout(stateTimeoutRef.current)
-            stateTimeoutRef.current = undefined
+          clearStateTimeout()
+          setJoinError(null)
+          const nextRoomState = envelope.payload as RoomState
+          const selfParticipant = nextRoomState.participants[userId]
+          if (selfParticipant?.username) {
+            usernameRef.current = selfParticipant.username
+            persistUsername(selfParticipant.username)
           }
-          setRoomState(envelope.payload as RoomState)
+          setRoomState(nextRoomState)
           return
         }
 
@@ -160,9 +236,26 @@ export function useRoomSocket(roomId: string): {
           setSessionCapabilities({
             canControlPlayback: Boolean(payload.canControlPlayback),
             canManagePlaylist: Boolean(payload.canManagePlaylist),
+            canManageRoomSecurity: Boolean(payload.canManageRoomSecurity),
             isControlSession: Boolean(payload.isControlSession),
             controlAuthorized: Boolean(payload.controlAuthorized),
           })
+          return
+        }
+
+        if (envelope.type === "room:join:rejected") {
+          if (joinRetryTimer) {
+            window.clearTimeout(joinRetryTimer)
+            joinRetryTimer = undefined
+          }
+          clearStateTimeout()
+          const payload = envelope.payload as { reason?: JoinRejectedReason }
+          if (payload.reason === "invalid_password") {
+            setJoinError("Incorrect room password. Try again.")
+          } else {
+            setJoinError("This room requires a join password.")
+          }
+          setStatus("awaiting_password")
         }
       }
 
@@ -176,10 +269,7 @@ export function useRoomSocket(roomId: string): {
         if (joinRetryTimer) {
           window.clearTimeout(joinRetryTimer)
         }
-        if (stateTimeoutRef.current) {
-          window.clearTimeout(stateTimeoutRef.current)
-          stateTimeoutRef.current = undefined
-        }
+        clearStateTimeout()
 
         if (!cancelled) {
           setStatus("reconnecting")
@@ -188,23 +278,13 @@ export function useRoomSocket(roomId: string): {
           }, 1000)
         }
       }
-
-      stateTimeoutRef.current = window.setTimeout(() => {
-        if (cancelled) {
-          return
-        }
-
-        if (ws.readyState === WebSocket.OPEN && !hasReceivedStateRef.current) {
-          console.warn("[realtime] no room state after join, reconnecting")
-          ws.close()
-        }
-      }, 5000)
     }
 
     void connect()
     return () => {
       cancelled = true
       hasReceivedStateRef.current = false
+      sendJoinRef.current = null
       if (reconnectTimer) {
         window.clearTimeout(reconnectTimer)
       }
@@ -223,5 +303,19 @@ export function useRoomSocket(roomId: string): {
     )
   }, [])
 
-  return { roomState, sessionCapabilities, send, userId, userSecret, status }
+  const submitJoinPassword = useCallback((password: string) => {
+    joinPasswordRef.current = password
+    sendJoinRef.current?.()
+  }, [])
+
+  return {
+    roomState,
+    sessionCapabilities,
+    send,
+    userId,
+    userSecret,
+    status,
+    joinError,
+    submitJoinPassword,
+  }
 }

@@ -9,8 +9,16 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRoomSocket } from "./use-room-socket"
 
 export function useRoomSession(roomId: string) {
-  const { roomState, sessionCapabilities, send, userId, userSecret, status } =
-    useRoomSocket(roomId)
+  const {
+    roomState,
+    sessionCapabilities,
+    send,
+    userId,
+    userSecret,
+    status,
+    joinError,
+    submitJoinPassword,
+  } = useRoomSocket(roomId)
   const [copied, setCopied] = useState(false)
 
   const shareUrl = useMemo(() => getRoomUrl(roomId), [roomId])
@@ -50,6 +58,8 @@ export function useRoomSession(roomId: string) {
     userId,
     userSecret,
     status,
+    joinError,
+    submitJoinPassword,
     copied,
     shareUrl,
     playerEmbedUrl,

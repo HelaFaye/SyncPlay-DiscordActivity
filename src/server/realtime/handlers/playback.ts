@@ -41,6 +41,12 @@ export const handlePlaybackSeek: RoomMessageHandler = async (ctx, data) => {
       const nowMs = nextMonotonicMs(state.playback.serverNowMs, Date.now())
       state.playback.timelineAnchorMs = Math.max(0, seekResult.data.targetMs)
       state.playback.serverNowMs = nowMs
+      state.playback.seekPreview = {
+        userId: ctx.userId,
+        targetMs: state.playback.timelineAnchorMs,
+        active: false,
+        updatedAt: nowMs,
+      }
       appendActionLog(state, {
         roomId: ctx.roomId,
         actorUserId: ctx.userId,

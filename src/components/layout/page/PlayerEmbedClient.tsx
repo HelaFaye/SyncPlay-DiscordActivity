@@ -1,12 +1,12 @@
 "use client"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Spinner } from "@/components/ui/spinner"
+import { RoomJoinPasswordPrompt } from "@/components/dialog/RoomJoinPasswordPrompt"
 import { useRoomSession } from "@/hooks/use-room-session"
 import { getRoomUrl } from "@/lib/control-url"
 import { canControlPlayback } from "@/lib/permissions-utils"
 import { PlayerPanel } from "../../panel/player/PlayerPanel"
 import { SiteNavbar } from "../SiteNavbar"
+import { SocketStatus } from "../SocketStatus"
 
 export function PlayerEmbedClient({ roomId }: { roomId: string }) {
   const {
@@ -15,6 +15,8 @@ export function PlayerEmbedClient({ roomId }: { roomId: string }) {
     send,
     userId,
     status,
+    joinError,
+    submitJoinPassword,
     copied,
     shareUrl,
     handleCopyShareUrl,
@@ -23,13 +25,17 @@ export function PlayerEmbedClient({ roomId }: { roomId: string }) {
   } = useRoomSession(roomId)
 
   if (!roomState) {
-    return (
-      <Alert className="max-w-md">
-        <Spinner className="mt-0.5" />
-        <AlertTitle>Connecting to player embed</AlertTitle>
-        <AlertDescription>Socket status: {status}</AlertDescription>
-      </Alert>
-    )
+    if (status === "awaiting_password") {
+      return (
+        <RoomJoinPasswordPrompt
+          roomId={roomId}
+          title={joinError}
+          onSubmit={submitJoinPassword}
+        />
+      )
+    }
+
+    return <SocketStatus status={status} />
   }
 
   const myRole = roomState.participants[userId]?.role
@@ -53,6 +59,12 @@ export function PlayerEmbedClient({ roomId }: { roomId: string }) {
         shareUrl={shareUrl}
         copied={copied}
         onCopyShareUrl={handleCopyShareUrl}
+        roomSecurity={roomState.roomSecurity}
+        canManageRoomSecurity={
+          roomState.ownerId === userId &&
+          sessionCapabilities.canManageRoomSecurity
+        }
+        send={send}
         showViewMenu={canControlByRole}
       />
       <section className="grid px-2">

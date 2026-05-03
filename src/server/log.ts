@@ -17,6 +17,8 @@ export const trackedActionTypes = new Set<string>([
   "playlist:add",
   "playlist:reorder",
   "media:played",
+  "room:password:set",
+  "room:password:cleared",
 ])
 
 export function appendActionLog(

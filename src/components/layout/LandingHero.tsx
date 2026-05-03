@@ -1,25 +1,31 @@
 "use client"
 
-import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Card,
+  CardAction,
+  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { env } from "@/env"
 import { randomRoomId } from "@/lib/room-utils"
 import { cn } from "@/lib/utils"
 import {
   ArrowRight,
+  CheckCircle2,
   Dice5,
+  GitPullRequest,
   ListVideo,
+  Lock,
   Music2,
   Play,
-  Sparkles,
+  ShieldCheck,
   Users,
 } from "lucide-react"
+import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -28,6 +34,23 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "../ui/accordion"
+import { Badge } from "../ui/badge"
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+} from "../ui/item"
+import { Kbd } from "../ui/kbd"
+import { Label } from "../ui/label"
+import { Separator } from "../ui/separator"
 
 function parseRoomId(raw: string): string | null {
   const trimmed = raw.trim()
@@ -62,6 +85,60 @@ function parseRoomId(raw: string): string | null {
   return bare || null
 }
 
+const featureCards = [
+  {
+    title: "Synced playback",
+    description:
+      "Play, pause, and seek events stay coordinated across the room.",
+    icon: Music2,
+  },
+  {
+    title: "Built for group watch",
+    description: "Invite friends quickly with one shareable room link.",
+    icon: Users,
+  },
+  {
+    title: "Shared queue",
+    description: "Keep the session flowing with one collaborative playlist.",
+    icon: ListVideo,
+  },
+  {
+    title: "No signup required",
+    description: "Guests can join with a link or room ID in seconds.",
+    icon: Lock,
+  },
+  {
+    title: "Open-source",
+    description:
+      "Code is publicly available for transparency and community review.",
+    icon: GitPullRequest,
+  },
+  {
+    title: "Room control options",
+    description:
+      "Choose dedicated views for room, player embed, and control embed.",
+    icon: ShieldCheck,
+  },
+]
+
+const faqItems = [
+  {
+    question: "Do people need an account?",
+    answer:
+      "No. You can create a room and invite others instantly without signup.",
+  },
+  {
+    question: "How do people join quickly?",
+    answer:
+      "Share the room link directly, or ask them to paste a room ID in Join.",
+  },
+  {
+    question: "Is this good for music and video?",
+    answer:
+      "Yes. Web-SyncPlay keeps playback actions aligned for both formats.",
+  },
+]
+
 export function LandingHero({
   roomId: initialRoomId,
 }: {
@@ -91,11 +168,7 @@ export function LandingHero({
   const joinDisabled = !parseRoomId(joinInput)
 
   return (
-    <section
-      className={cn(
-        "relative isolate flex w-full grow flex-col justify-center overflow-hidden px-4 py-16 sm:py-24",
-      )}
-    >
+    <section className="relative isolate w-full grow overflow-hidden px-6 py-8 lg:py-10">
       <div
         className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,oklch(0.55_0.22_264/0.25),transparent)]"
         aria-hidden
@@ -112,133 +185,181 @@ export function LandingHero({
         className="animate-blob animation-delay-2000 pointer-events-none absolute top-1/2 -right-32 h-104 w-104 -translate-y-1/2 rounded-full bg-linear-to-bl from-cyan-500/30 via-blue-500/20 to-transparent blur-3xl"
         aria-hidden
       />
-      <div
-        className="animate-blob animation-delay-4000 pointer-events-none absolute -bottom-24 left-1/3 h-88 w-88 rounded-full bg-linear-to-tr from-emerald-500/25 via-teal-500/15 to-transparent blur-3xl"
-        aria-hidden
-      />
 
-      <div className="relative z-10 mx-auto w-full max-w-6xl">
-        <div className="grid items-center gap-12 lg:grid-cols-[1fr_min(380px,100%)] lg:gap-10">
-          <div className="flex flex-col gap-8">
-            <div className="flex flex-col gap-5">
-              <Badge variant="secondary" className="w-fit gap-1.5 pr-2.5">
-                <Sparkles className="size-3" data-icon="inline-start" />
-                Live sync · no signup
-              </Badge>
-              <h1 className="font-heading text-4xl leading-[1.1] font-bold tracking-tight sm:text-5xl lg:text-6xl">
-                <span className="block text-foreground">Watch together,</span>
-                <span className="mt-1 block bg-linear-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent">
-                  in perfect sync
-                </span>
-              </h1>
-              <p className="max-w-xl text-base text-muted-foreground sm:text-lg">
-                Create a room in one click, share the link, and keep video or
-                music aligned for everyone — whether you&apos;re across the hall
-                or across the world.
-              </p>
-            </div>
+      <div className="z-10 mx-auto flex w-full max-w-6xl flex-col gap-8 sm:gap-10 lg:gap-12">
+        <div className="flex justify-between items-center">
+          <Link href="/" className="flex items-center gap-2">
+            <Image
+              src="/logo_white.png"
+              alt="Web-SyncPlay logo"
+              width={60}
+              height={60}
+            />
+            <span className="text-3xl text-muted-foreground">
+              {env.NEXT_PUBLIC_APP_NAME}
+            </span>
+          </Link>
 
-            <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <Badge variant="outline">
+            <CheckCircle2 />
+            Best for movie nights, study sessions, playlists
+          </Badge>
+        </div>
+        <div className="grid gap-8 lg:grid-cols-[1.1fr_min(430px,100%)] lg:items-start">
+          <div className="flex flex-col gap-5 sm:gap-6">
+            <h1 className="max-w-2xl font-heading text-4xl leading-[1.1] font-bold tracking-tight sm:text-5xl lg:text-6xl">
+              Sync movie nights and playlists with friends in seconds
+            </h1>
+            <p className="max-w-2xl text-muted-foreground sm:text-lg">
+              Start a room, share one link, and keep everyone aligned without
+              accounts, setup, or complicated onboarding.
+            </p>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl">Start or join instantly</CardTitle>
+              <CardDescription>
+                Create a room for your group or paste a room link to join one.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <div className="flex w-full items-center gap-2">
                 <Link
                   href={`/room/${roomId}`}
                   className={cn(
                     buttonVariants({ size: "lg" }),
-                    "inline-flex gap-2 sm:min-w-48",
+                    "grow flex items-center gap-2",
                   )}
                 >
-                  <Play className="size-4" />
-                  Create new room
+                  <Play />
+                  Create room <code>{roomId}</code>
                 </Link>
-                <div className="flex items-center gap-2">
-                  <code className="truncate rounded-lg border border-border bg-muted/50 px-3 py-2 font-mono text-xs text-muted-foreground sm:text-sm">
-                    {roomId}
-                  </code>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon-lg"
-                    className="shrink-0"
-                    onClick={() => setRoomId(randomRoomId())}
-                    aria-label="Shuffle a new room id"
-                  >
-                    <Dice5 className="size-4" />
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-lg"
+                  className="shrink-0"
+                  onClick={() => setRoomId(randomRoomId())}
+                  aria-label="Shuffle a new room id"
+                >
+                  <Dice5 />
+                </Button>
               </div>
 
-              <form
-                className="flex max-w-xl items-center gap-2"
-                onSubmit={handleJoin}
-              >
-                <Input
-                  type="text"
-                  placeholder="Join with room id or paste a room link…"
-                  value={joinInput}
-                  onChange={(e) => setJoinInput(e.target.value)}
-                  onKeyDown={onJoinKeyDown}
-                  className="h-9 flex-1"
-                  aria-label="Room id or link to join"
-                />
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  size="lg"
-                  disabled={joinDisabled}
-                  className="gap-2 sm:w-auto"
-                >
-                  Join
-                  <ArrowRight className="size-4" />
-                </Button>
-              </form>
-            </div>
+              <div className="flex items-center gap-2">
+                <Separator className="shrink" />
+                <span>OR</span>
+                <Separator className="shrink" />
+              </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Card
-                size="sm"
-                className="border-border/80 bg-card/80 backdrop-blur-sm"
-              >
-                <CardHeader className="pb-2">
-                  <div className="mb-1 flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Music2 className="size-4" />
-                  </div>
-                  <CardTitle className="text-sm">Synced playback</CardTitle>
-                  <CardDescription className="text-xs leading-relaxed">
-                    Play, pause, and seek stay aligned for the whole group.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-              <Card
-                size="sm"
-                className="border-border/80 bg-card/80 backdrop-blur-sm"
-              >
-                <CardHeader className="pb-2">
-                  <div className="mb-1 flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Users className="size-4" />
-                  </div>
-                  <CardTitle className="text-sm">Friends together</CardTitle>
-                  <CardDescription className="text-xs leading-relaxed">
-                    Share one link; everyone joins the same watch party.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-              <Card
-                size="sm"
-                className="border-border/80 bg-card/80 backdrop-blur-sm sm:col-span-1"
-              >
-                <CardHeader className="pb-2">
-                  <div className="mb-1 flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <ListVideo className="size-4" />
-                  </div>
-                  <CardTitle className="text-sm">Shared playlist</CardTitle>
-                  <CardDescription className="text-xs leading-relaxed">
-                    Queue what&apos;s next and keep the vibe going in order.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            </div>
-          </div>
+              <form className="flex flex-col gap-2" onSubmit={handleJoin}>
+                <Label htmlFor="joinInput">Join an existing room</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="joinInput"
+                    type="text"
+                    placeholder="Paste room id or room link"
+                    value={joinInput}
+                    onChange={(e) => setJoinInput(e.target.value)}
+                    onKeyDown={onJoinKeyDown}
+                    className="h-9"
+                    aria-label="Room id or link to join"
+                  />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    size="lg"
+                    disabled={joinDisabled}
+                  >
+                    <ArrowRight />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Example: <Kbd>watch-party</Kbd>, <Kbd>/room/watch-party</Kbd>{" "}
+                  or full room URL
+                </p>
+              </form>
+            </CardContent>
+          </Card>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              Feature list of Web-SyncPlay
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-8 grid-cols-2 md:grid-cols-3">
+              {featureCards.map((feature) => (
+                <Item key={feature.title} variant="outline">
+                  <ItemMedia variant="icon">
+                    <feature.icon />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>{feature.title}</ItemTitle>
+                    <ItemDescription>{feature.description}</ItemDescription>
+                  </ItemContent>
+                </Item>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              Frequently Asked Questions
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Accordion>
+              {faqItems.map((item) => (
+                <AccordionItem key={item.question} value={item.question}>
+                  <AccordionTrigger>{item.question}</AccordionTrigger>
+                  <AccordionContent>{item.answer}</AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              Ready to start your playback session?
+            </CardTitle>
+            <CardDescription>
+              Create a room for your friends to join and start watching your
+              playlists together.
+            </CardDescription>
+            <CardAction>
+              <div className="flex w-full items-center gap-2">
+                <Link
+                  href={`/room/${roomId}`}
+                  className={cn(
+                    buttonVariants({ size: "lg" }),
+                    "grow flex items-center gap-2",
+                  )}
+                >
+                  <Play />
+                  Create room <code>{roomId}</code>
+                </Link>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-lg"
+                  className="shrink-0"
+                  onClick={() => setRoomId(randomRoomId())}
+                  aria-label="Shuffle a new room id"
+                >
+                  <Dice5 />
+                </Button>
+              </div>
+            </CardAction>
+          </CardHeader>
+        </Card>
       </div>
     </section>
   )

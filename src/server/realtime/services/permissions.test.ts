@@ -5,6 +5,11 @@ import { canControlFromConnectionContext } from "./permissions"
 const state = {
   roomId: "room-1",
   ownerId: "owner",
+  roomSecurity: {
+    joinPasswordEnabled: false,
+    joinPasswordUpdatedAt: null,
+    admissionVersion: 0,
+  },
   playback: {
     paused: true,
     playbackRate: 1,

@@ -100,9 +100,18 @@ export interface ActionLogEntry {
   error?: string
 }
 
+export interface RoomSecurityState {
+  joinPasswordEnabled: boolean
+  joinPasswordUpdatedAt: number | null
+  admissionVersion: number
+  joinPasswordHash?: string
+  joinPasswordSalt?: string
+}
+
 export interface RoomState {
   roomId: string
   ownerId: string
+  roomSecurity: RoomSecurityState
   playback: PlaybackState
   playlist: PlaylistItem[]
   currentIndex: number

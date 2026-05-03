@@ -1,0 +1,145 @@
+import type { RoomSecurityState, RoomState } from "@/zod/types"
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto"
+
+const JOIN_PASSWORD_KEY_LENGTH = 64
+
+export type JoinAdmissionResult =
+  | { allowed: true }
+  | { allowed: false; reason: "password_required" | "invalid_password" }
+
+export function createDefaultRoomSecurity(): RoomSecurityState {
+  return {
+    joinPasswordEnabled: false,
+    joinPasswordUpdatedAt: null,
+    admissionVersion: 0,
+  }
+}
+
+export function ensureRoomSecurity(state: RoomState): RoomSecurityState {
+  const current = state.roomSecurity
+  const normalized: RoomSecurityState = {
+    joinPasswordEnabled: current?.joinPasswordEnabled === true,
+    joinPasswordUpdatedAt:
+      typeof current?.joinPasswordUpdatedAt === "number" &&
+      Number.isFinite(current.joinPasswordUpdatedAt)
+        ? current.joinPasswordUpdatedAt
+        : null,
+    admissionVersion:
+      typeof current?.admissionVersion === "number" &&
+      Number.isInteger(current.admissionVersion) &&
+      current.admissionVersion >= 0
+        ? current.admissionVersion
+        : 0,
+    joinPasswordHash:
+      typeof current?.joinPasswordHash === "string"
+        ? current.joinPasswordHash
+        : undefined,
+    joinPasswordSalt:
+      typeof current?.joinPasswordSalt === "string"
+        ? current.joinPasswordSalt
+        : undefined,
+  }
+
+  if (
+    normalized.joinPasswordEnabled &&
+    (!normalized.joinPasswordHash || !normalized.joinPasswordSalt)
+  ) {
+    normalized.joinPasswordEnabled = false
+    normalized.joinPasswordHash = undefined
+    normalized.joinPasswordSalt = undefined
+  }
+
+  state.roomSecurity = normalized
+  return normalized
+}
+
+export function sanitizeRoomStateForClient(state: RoomState): RoomState {
+  const security = ensureRoomSecurity(state)
+  return {
+    ...state,
+    roomSecurity: {
+      joinPasswordEnabled: security.joinPasswordEnabled,
+      joinPasswordUpdatedAt: security.joinPasswordUpdatedAt,
+      admissionVersion: security.admissionVersion,
+    },
+  }
+}
+
+export function setJoinPassword(state: RoomState, password: string): void {
+  const security = ensureRoomSecurity(state)
+  const trimmedPassword = password.trim()
+  const salt = randomBytes(16).toString("hex")
+  security.joinPasswordEnabled = true
+  security.joinPasswordSalt = salt
+  security.joinPasswordHash = hashJoinPassword(trimmedPassword, salt)
+  security.joinPasswordUpdatedAt = Date.now()
+  security.admissionVersion += 1
+}
+
+export function clearJoinPassword(state: RoomState): boolean {
+  const security = ensureRoomSecurity(state)
+  const changed =
+    security.joinPasswordEnabled ||
+    Boolean(security.joinPasswordHash) ||
+    Boolean(security.joinPasswordSalt)
+  security.joinPasswordEnabled = false
+  security.joinPasswordHash = undefined
+  security.joinPasswordSalt = undefined
+  security.joinPasswordUpdatedAt = Date.now()
+  security.admissionVersion += changed ? 1 : 0
+  return changed
+}
+
+export function evaluateJoinAdmission(
+  state: RoomState | null,
+  suppliedPassword?: string,
+): JoinAdmissionResult {
+  if (!state) {
+    return { allowed: true }
+  }
+
+  const security = ensureRoomSecurity(state)
+  if (!security.joinPasswordEnabled) {
+    return { allowed: true }
+  }
+
+  if (!suppliedPassword?.trim()) {
+    return { allowed: false, reason: "password_required" }
+  }
+
+  if (!verifyJoinPassword(state, suppliedPassword)) {
+    return { allowed: false, reason: "invalid_password" }
+  }
+
+  return { allowed: true }
+}
+
+export function verifyJoinPassword(
+  state: RoomState,
+  suppliedPassword: string,
+): boolean {
+  const security = ensureRoomSecurity(state)
+  if (
+    !security.joinPasswordEnabled ||
+    !security.joinPasswordHash ||
+    !security.joinPasswordSalt
+  ) {
+    return true
+  }
+
+  const expected = Buffer.from(security.joinPasswordHash, "hex")
+  const actual = Buffer.from(
+    hashJoinPassword(suppliedPassword.trim(), security.joinPasswordSalt),
+    "hex",
+  )
+
+  if (expected.length !== actual.length) {
+    return false
+  }
+
+  return timingSafeEqual(expected, actual)
+}
+
+function hashJoinPassword(password: string, salt: string): string {
+  return scryptSync(password, salt, JOIN_PASSWORD_KEY_LENGTH).toString("hex")
+}

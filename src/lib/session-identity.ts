@@ -2,6 +2,7 @@
 
 const USER_ID_KEY = "web-syncplay:user-id"
 const USER_SECRET_KEY = "web-syncplay:user-secret"
+const USERNAME_KEY = "web-syncplay:username"
 
 function randomHex(bytes: number): string {
   const buffer = new Uint8Array(bytes)
@@ -13,6 +14,36 @@ function randomHex(bytes: number): string {
 
 function isValidIdentityValue(value: string | null): value is string {
   return typeof value === "string" && value.trim().length > 0
+}
+
+function looksLikeIdentityBootstrapHash(rawHash: string): boolean {
+  const params = new URLSearchParams(rawHash)
+  if (params.has("uid") || params.has("secret")) {
+    return true
+  }
+  return (
+    /(^|[&;])uid(?:[=&;]|$)/i.test(rawHash) ||
+    /(^|[&;])secret(?:[=&;]|$)/i.test(rawHash)
+  )
+}
+
+function clearUrlHash(): void {
+  const cleanUrl = `${window.location.pathname}${window.location.search}`
+  window.history.replaceState(window.history.state, "", cleanUrl)
+}
+
+export function stripIdentityHashFromUrl(): boolean {
+  if (typeof window === "undefined") {
+    return false
+  }
+  const rawHash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash
+  if (!rawHash || !looksLikeIdentityBootstrapHash(rawHash)) {
+    return false
+  }
+  clearUrlHash()
+  return true
 }
 
 export function getOrCreateSessionIdentity(): {
@@ -64,18 +95,35 @@ export function consumeSessionIdentityFromHash(): {
   const hashUserId = params.get("uid")
   const hashSecret = params.get("secret")
   if (!isValidIdentityValue(hashUserId) || !isValidIdentityValue(hashSecret)) {
+    stripIdentityHashFromUrl()
     return {}
   }
 
   window.localStorage.setItem(USER_ID_KEY, hashUserId)
   window.localStorage.setItem(USER_SECRET_KEY, hashSecret)
-
-  const cleanUrl = `${window.location.pathname}${window.location.search}`
-  window.history.replaceState(window.history.state, "", cleanUrl)
+  clearUrlHash()
 
   return { userId: hashUserId, userSecret: hashSecret }
 }
 
 export function buildIdentityHash(userId: string, userSecret: string): string {
   return `uid=${encodeURIComponent(userId)}&secret=${encodeURIComponent(userSecret)}`
+}
+
+export function getPersistedUsername(): string | null {
+  if (typeof window === "undefined") {
+    return null
+  }
+  const username = window.localStorage.getItem(USERNAME_KEY)
+  return isValidIdentityValue(username) ? username : null
+}
+
+export function persistUsername(username: string): void {
+  if (typeof window === "undefined") {
+    return
+  }
+  if (!isValidIdentityValue(username)) {
+    return
+  }
+  window.localStorage.setItem(USERNAME_KEY, username.trim())
 }

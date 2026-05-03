@@ -37,3 +37,7 @@ pnpm-debug.log*
 
 # Bun legacy lockfile (project now tracks bun.lock)
 bun.lockb
+
+# Next.js
+next-env.d.ts
+tsconfig.tsbuildinfo

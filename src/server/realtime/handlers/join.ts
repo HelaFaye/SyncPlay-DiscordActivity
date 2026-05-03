@@ -19,7 +19,34 @@ import {
 import { roomJoinSchema } from "@/zod/schemas"
 import type { ParticipantState, WsEnvelope } from "@/zod/types"
 import { randomUUID } from "node:crypto"
+import type { WebSocket } from "ws"
+import { evaluateJoinAdmission } from "../services/room-security"
 import type { JoinHandler } from "./types"
+
+export function resolveJoinParticipantProfile(
+  existingParticipant: ParticipantState | undefined,
+  incoming: { username: string; avatarStyle: string },
+): { username: string; avatarStyle: string } {
+  if (existingParticipant) {
+    return {
+      username: existingParticipant.username,
+      avatarStyle: existingParticipant.avatarStyle,
+    }
+  }
+
+  return incoming
+}
+
+function sendEnvelope<TPayload>(
+  ws: WebSocket,
+  envelope: WsEnvelope<string, TPayload>,
+) {
+  try {
+    ws.send(JSON.stringify(envelope))
+  } catch (error) {
+    console.error(`[realtime] failed to send ${envelope.type}`, error)
+  }
+}
 
 export const handleRoomJoin: JoinHandler = async (ctx, data) => {
   const joinResult = roomJoinSchema.safeParse(data.payload)
@@ -36,6 +63,7 @@ export const handleRoomJoin: JoinHandler = async (ctx, data) => {
   const username = String(joinResult.data.username || "guest")
   const avatarStyle = String(joinResult.data.avatarStyle || "adventurer")
   const userSecret = joinResult.data.userSecret
+  const joinPassword = joinResult.data.joinPassword
 
   const previousMeta = getSocketMeta(ctx.ws)
   if (
@@ -47,6 +75,19 @@ export const handleRoomJoin: JoinHandler = async (ctx, data) => {
       previousMeta.userId,
     )
     setSocketPresenceTracked(ctx.ws, false)
+  }
+
+  const existingState = await ctx.store.get(roomId)
+  const admission = evaluateJoinAdmission(existingState, joinPassword)
+  if (!admission.allowed) {
+    sendEnvelope(ctx.ws, {
+      type: "room:join:rejected",
+      requestId: data.requestId,
+      payload: {
+        reason: admission.reason,
+      },
+    })
+    return
   }
 
   const isControlSession = true
@@ -71,6 +112,7 @@ export const handleRoomJoin: JoinHandler = async (ctx, data) => {
     | {
         canControlPlayback: boolean
         canManagePlaylist: boolean
+        canManageRoomSecurity: boolean
         isControlSession: boolean
         controlAuthorized: boolean
       }
@@ -101,10 +143,14 @@ export const handleRoomJoin: JoinHandler = async (ctx, data) => {
       existingParticipant?.role ??
       (state.ownerId === userId ? "owner" : "guest")
     const now = Date.now()
+    const participantProfile = resolveJoinParticipantProfile(
+      existingParticipant,
+      { username, avatarStyle },
+    )
     state.participants[userId] = {
       userId,
-      username,
-      avatarStyle,
+      username: participantProfile.username,
+      avatarStyle: participantProfile.avatarStyle,
       role,
       connected: true,
       joinedAt: existingParticipant?.joinedAt ?? now,
@@ -123,7 +169,7 @@ export const handleRoomJoin: JoinHandler = async (ctx, data) => {
       appendActionLog(state, {
         roomId,
         actorUserId: userId,
-        actorUsername: username,
+        actorUsername: participantProfile.username,
         action: "participant:joined",
         payload: {},
       })
@@ -137,9 +183,12 @@ export const handleRoomJoin: JoinHandler = async (ctx, data) => {
     const canControlByRole = role === "owner" || role === "moderator"
     const canMutate =
       canControlByRole && (!isControlSession || controlAuthorized)
+    const canManageRoomSecurity =
+      role === "owner" && (!isControlSession || controlAuthorized)
     sessionCapabilities = {
       canControlPlayback: canMutate,
       canManagePlaylist: canMutate,
+      canManageRoomSecurity,
       isControlSession,
       controlAuthorized,
     }
@@ -149,18 +198,10 @@ export const handleRoomJoin: JoinHandler = async (ctx, data) => {
   })
 
   if (sessionCapabilities) {
-    const envelope: WsEnvelope<
-      "session:capabilities",
-      typeof sessionCapabilities
-    > = {
+    sendEnvelope(ctx.ws, {
       type: "session:capabilities",
       payload: sessionCapabilities,
-    }
-    try {
-      ctx.ws.send(JSON.stringify(envelope))
-    } catch (error) {
-      console.error("[realtime] failed to send session:capabilities", error)
-    }
+    })
   }
 
   for (const uid of reconnectingUserIds) {

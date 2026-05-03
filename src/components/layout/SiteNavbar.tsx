@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import { env } from "@/env"
+import type { TypedRoomEventSender } from "@/lib/room-events"
+import type { RoomSecurityState } from "@/zod/types"
 import { Copy, ExternalLink, QrCode, Rows3, ScreenShare } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
@@ -32,6 +34,9 @@ export function SiteNavbar(props: {
   shareUrl: string
   copied: boolean
   onCopyShareUrl: () => void
+  roomSecurity?: RoomSecurityState
+  canManageRoomSecurity?: boolean
+  send?: TypedRoomEventSender
   showViewMenu?: boolean
 }) {
   const {
@@ -45,6 +50,9 @@ export function SiteNavbar(props: {
     shareUrl,
     copied,
     onCopyShareUrl,
+    roomSecurity,
+    canManageRoomSecurity = false,
+    send,
     showViewMenu = true,
   } = props
   const [isShareOpen, setIsShareOpen] = useState(false)
@@ -164,6 +172,9 @@ export function SiteNavbar(props: {
         open={isShareOpen}
         shareUrl={shareUrl}
         copied={copied}
+        roomSecurity={roomSecurity}
+        canManageRoomSecurity={canManageRoomSecurity}
+        send={send}
         onOpenChange={setIsShareOpen}
         onCopy={onCopyShareUrl}
       />

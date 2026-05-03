@@ -1,6 +1,7 @@
 import * as participant from "./participant"
 import * as playback from "./playback"
 import * as playlist from "./playlist"
+import * as roomPassword from "./room-password"
 import * as seekPreview from "./seek-preview"
 import type { RoomMessageHandler } from "./types"
 
@@ -25,4 +26,6 @@ export const roomMessageHandlers: Record<string, RoomMessageHandler> = {
   "seek:preview": seekPreview.handleSeekPreview,
   "participant:update": participant.handleParticipantUpdate,
   "participant:role:update": participant.handleParticipantRoleUpdate,
+  "room:password:set": roomPassword.handleRoomPasswordSet,
+  "room:password:clear": roomPassword.handleRoomPasswordClear,
 }

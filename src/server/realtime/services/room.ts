@@ -3,6 +3,7 @@ import { repairCleanupAndCheckRoomState } from "@/server/repair"
 import type { RoomState } from "@/zod/types"
 import { randomUUID } from "node:crypto"
 import { normalizeParticipantRoles } from "./permissions"
+import { createDefaultRoomSecurity } from "./room-security"
 
 export async function createInitialRoomState(
   store: RoomStateStore,
@@ -13,6 +14,7 @@ export async function createInitialRoomState(
   return {
     roomId,
     ownerId,
+    roomSecurity: createDefaultRoomSecurity(),
     currentIndex: 0,
     playlist: defaults.map((entry) => ({
       id: randomUUID(),

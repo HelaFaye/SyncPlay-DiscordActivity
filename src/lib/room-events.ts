@@ -34,6 +34,8 @@ export interface ClientEventPayloadMap {
   "playlist:reorder": { from: number; to: number }
   "playlist:select": { index: number }
   "seek:preview": { targetMs?: number; active?: boolean }
+  "room:password:set": { password: string }
+  "room:password:clear": Record<string, never>
 }
 
 export type ClientEventType = keyof ClientEventPayloadMap

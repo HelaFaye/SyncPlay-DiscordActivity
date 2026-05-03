@@ -6,9 +6,16 @@ export const roomJoinSchema = z.object({
   roomId: z.string().min(1),
   userId: z.string().min(1).optional(),
   userSecret: z.string().min(1),
+  joinPassword: z.string().min(1).max(256).optional(),
   username: z.string().min(1).max(64).optional(),
   avatarStyle: z.string().min(1).max(64).optional(),
 })
+
+export const roomPasswordSetSchema = z.object({
+  password: z.string().min(1).max(256),
+})
+
+export const roomPasswordClearSchema = z.object({})
 
 export const playbackSeekSchema = z.object({
   targetMs: z

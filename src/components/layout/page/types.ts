@@ -9,6 +9,7 @@ export interface RoomPanelProps {
   capabilities: {
     canControlPlayback: boolean
     canManagePlaylist: boolean
+    canManageRoomSecurity: boolean
     isControlSession: boolean
     controlAuthorized: boolean
   }

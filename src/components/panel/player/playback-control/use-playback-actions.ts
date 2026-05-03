@@ -19,13 +19,6 @@ export function createPlaybackActions(config: PlaybackControlContext) {
 
       send("playback:pause", { currentTimeMs })
     },
-    seek: (targetMs: number) => {
-      if (controlsDisabled) {
-        return
-      }
-
-      send("playback:seek", { targetMs: Math.max(0, targetMs) })
-    },
     stepBy: (deltaMs: number) => {
       if (controlsDisabled) {
         return
@@ -33,12 +26,35 @@ export function createPlaybackActions(config: PlaybackControlContext) {
 
       send("playback:seek", { targetMs: Math.max(0, elapsedMs + deltaMs) })
     },
-    seekPreview: (targetMs: number, active: boolean) => {
+    beginSeek: (targetMs: number) => {
       if (controlsDisabled) {
         return
       }
 
-      send("seek:preview", { targetMs: Math.max(0, targetMs), active })
+      send("seek:preview", { targetMs: Math.max(0, targetMs), active: true })
+    },
+    updateSeek: (targetMs: number) => {
+      if (controlsDisabled) {
+        return
+      }
+
+      send("seek:preview", { targetMs: Math.max(0, targetMs), active: true })
+    },
+    endSeekPreview: (targetMs: number) => {
+      if (controlsDisabled) {
+        return
+      }
+
+      send("seek:preview", { targetMs: Math.max(0, targetMs), active: false })
+    },
+    commitSeek: (targetMs: number) => {
+      if (controlsDisabled) {
+        return
+      }
+
+      const nextTarget = Math.max(0, targetMs)
+      send("seek:preview", { targetMs: nextTarget, active: false })
+      send("playback:seek", { targetMs: nextTarget })
     },
     selectAdjacent: (direction: "previous" | "next") => {
       if (controlsDisabled) {
